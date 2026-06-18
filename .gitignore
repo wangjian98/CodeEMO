@@ -9,7 +9,8 @@ build/
 # Data (large files)
 data/
 outputs/
-results/visualizations/
+# Visualizations (can be regenerated)
+# results/visualizations/
 
 # Model caches
 hf_cache/
