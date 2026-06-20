@@ -115,7 +115,7 @@ def encode_events(student_df, max_events=None):
         deadline_dists = deadline_dists / (deadline_dists.max() + 1e-8)
     
     return {
-        'event_types': torch.LongTensor(event_type_oh.argmax(dim=1)),  # Indices
+        'event_types': torch.LongTensor(event_type_oh.argmax(axis=1)),  # Indices
         'event_types_oh': torch.FloatTensor(event_type_oh),  # One-hot for analysis
         'time_intervals': torch.FloatTensor(time_intervals),
         'exercise_ids': torch.LongTensor(exercise_ids),
