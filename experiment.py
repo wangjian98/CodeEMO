@@ -296,18 +296,21 @@ def run_cross_validation(X, y, model_type, n_folds=5, epochs=100):
 
 def get_feature_subsets(X, feature_names):
     """获取特征子集"""
-    # 7维基础特征：只用第一个事件类型的均值
+    # 7维基础特征：每类事件取第一个统计量（均值），共7维
+    # 索引: 0=text_insert_mean, 7=text_remove_mean, 14=text_paste_mean,
+    #       21=focus_gained_mean, 28=focus_lost_mean, 35=run_mean, 42=submit_mean
     basic_7_idx = [0, 7, 14, 21, 28, 35, 42]
     
-    # 38维风格特征：行为轨迹 + 情绪复合特征
-    style_38_idx = list(range(28, 38)) + list(range(38, 44))
+    # 16维风格特征：行为轨迹(10维) + 情绪复合特征(6维)，索引28-43
+    # 注：原始注释误写为"38维"，实际为16维
+    style_16_idx = list(range(28, 38)) + list(range(38, 44))
     
     # 46维全部特征
     all_46_idx = list(range(46))
     
     return {
         'basic_7': X[:, basic_7_idx],
-        'style_38': X[:, style_38_idx],
+        'style_16': X[:, style_16_idx],
         'all_46': X[:, all_46_idx]
     }
 
@@ -394,12 +397,10 @@ def main():
         device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         model = SimpleNN(input_dim=X.shape[1]).to(device)
         
-        # Weighted BCE Loss
-        weights = class_weights_tensor.to(device)
-        criterion = nn.BCEWithLogitsLoss(pos_weight=weights[1]/weights[0])
+        # BCE Loss (BCELoss since SimpleNN already applies Sigmoid)
+        # Note: class weighting applied via manual per-sample weights below
+        criterion = nn.BCELoss(reduction='none')
         
-        # 用logits版本需要修改模型
-        model = SimpleNN(input_dim=X.shape[1])
         train_loader = DataLoader(
             TensorDataset(torch.FloatTensor(X_train_scaled), torch.FloatTensor(y_train)),
             batch_size=32, shuffle=True
@@ -420,8 +421,10 @@ def main():
                 X_batch, y_batch = X_batch.to(device), y_batch.to(device)
                 optimizer.zero_grad()
                 outputs = model(X_batch)
-                # Weighted loss
-                loss = criterion(outputs.squeeze(), y_batch)
+                # Weighted BCE loss with per-sample class weights
+                sample_weights = class_weights_tensor[y_batch.long().to(device)]
+                loss = criterion(outputs.squeeze(), y_batch.to(device))
+                loss = (loss * sample_weights).mean()
                 loss.backward()
                 optimizer.step()
             

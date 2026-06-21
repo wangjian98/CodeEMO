@@ -11,6 +11,7 @@ Transforms raw IDE event logs into the format required by MAMBAStudentModel:
 import numpy as np
 import pandas as pd
 import torch
+import torch.nn.functional as F
 from pathlib import Path
 from tqdm import tqdm
 import pickle
@@ -177,10 +178,6 @@ def collate_mamba_batch(samples):
         'mask': torch.stack(masks),
         'n_events': torch.LongTensor([min(s['n_events'], max_len) for s in samples])
     }
-
-
-# Need F for padding
-import torch.nn.functional as F
 
 
 class MAMBAFeatureProcessor:

@@ -3,8 +3,7 @@
 """
 import pandas as pd
 import numpy as np
-from scipy.stats import entropy
-from scipy.signal import linregress
+from scipy.stats import entropy, linregress
 from collections import Counter
 import warnings
 warnings.filterwarnings('ignore')
@@ -197,8 +196,8 @@ def extract_features(student_df, student_id):
     
     trajectory_names = ['improvement', 'consistency', 'trend', 'mean_interval',
                        'std_interval', 'min_interval', 'max_interval',
-                       'duration_per_event', 'median_interval', 'iqr_interval',
-                       'interval_ratio']
+                       'duration_per_event', 'median_interval', 'iqr_interval']
+    # Note: interval_ratio is computed but not returned (10-dim output)
     
     for i, name in enumerate(trajectory_names[:10]):
         features[f'trajectory_{name}'] = trajectory_features[i]

@@ -611,7 +611,6 @@ if __name__ == "__main__":
     }
     
     outputs = model(dummy_batch)
-    print(f"Grade prediction shape: {outputs['grade'].shape}")
     print(f"Risk prediction shape: {outputs['risk'].shape}")
     
     # Count parameters
