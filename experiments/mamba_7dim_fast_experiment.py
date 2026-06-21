@@ -70,7 +70,10 @@ class SimplifiedMambaStudent(nn.Module):
         # Step 4: Prototype discovery
         self.prototype_centers = nn.Parameter(torch.randn(n_prototypes, d_model) * 0.1)
         
-        # Step 5: Prediction head
+        # Step 5a: Event prediction head (for pretraining)
+        self.event_head = nn.Linear(d_model, n_event_types)
+        
+        # Step 5b: Risk prediction head (for fine-tuning)
         self.risk_head = nn.Sequential(
             nn.Linear(d_model * 2, d_model),
             nn.GELU(),
@@ -126,14 +129,18 @@ class SimplifiedMambaStudent(nn.Module):
         combined = self.dropout(combined)
         risk_pred = self.risk_head(combined)
         
+        # Use last hidden state for next-event prediction
+        event_pred = self.event_head(mamba_out[:, -1, :])
+        
         if return_repr:
             return {
                 'risk': risk_pred,
+                'event': event_pred,
                 'repr': multi_scale_repr,
                 'proto_weights': proto_weights,
                 'mamba_out': mamba_out
             }
-        return {'risk': risk_pred}
+        return {'risk': risk_pred, 'event': event_pred}
     
     def get_interpretability(self, batch):
         """Step 6: Interpretability"""
@@ -175,6 +182,7 @@ def collate_for_pretrain(samples):
     
     max_len = max(s['n_events'] for s in samples)
     max_len = min(max_len, 2000)  # Cap at 2000 events
+    input_len = max_len - 1  # Input is n-1 events, target is 1 event
     
     event_types, time_intervals, deadline_dists = [], [], []
     masks, next_events = [], []
@@ -184,21 +192,38 @@ def collate_for_pretrain(samples):
         n = min(s['n_events'], max_len)
         
         if n > 1:
-            event_types.append(s['event_types'][:n-1])
-            time_intervals.append(s['time_intervals'][:n-1])
-            deadline_dists.append(s['deadline_dists'][:n-1])
-            part_ids_list.append(s['part_ids'][:n-1])
-            masks.append(torch.ones(n-1))
+            # Truncate or pad to input_len
+            inp = s['event_types'][:input_len]
+            if inp.shape[0] < input_len:
+                inp = F.pad(inp, (0, input_len - inp.shape[0]), value=0)
+            event_types.append(inp)
+            
+            ti = s['time_intervals'][:input_len]
+            if ti.shape[0] < input_len:
+                ti = F.pad(ti, (0, input_len - ti.shape[0]), value=0)
+            time_intervals.append(ti)
+            
+            dd = s['deadline_dists'][:input_len]
+            if dd.shape[0] < input_len:
+                dd = F.pad(dd, (0, input_len - dd.shape[0]), value=0)
+            deadline_dists.append(dd)
+            
+            pi = s['part_ids'][:input_len]
+            if pi.shape[0] < input_len:
+                pi = F.pad(pi, (0, input_len - pi.shape[0]), value=1)
+            part_ids_list.append(pi)
+            
+            masks.append(torch.ones(input_len))
             next_events.append(s['event_types'][n-1])
         else:
-            event_types.append(s['event_types'][:1])
-            time_intervals.append(s['time_intervals'][:1])
-            deadline_dists.append(s['deadline_dists'][:1])
-            part_ids_list.append(s['part_ids'][:1])
-            masks.append(torch.ones(1))
+            event_types.append(torch.zeros(input_len, dtype=torch.long))
+            time_intervals.append(torch.zeros(input_len))
+            deadline_dists.append(torch.zeros(input_len))
+            part_ids_list.append(torch.ones(input_len, dtype=torch.long))
+            masks.append(torch.zeros(input_len))
             next_events.append(s['event_types'][0])
     
-    # Pad
+    # Stack (all now have same size)
     result = {
         'event_types': torch.stack(event_types),
         'time_intervals': torch.stack(time_intervals),
@@ -211,12 +236,48 @@ def collate_for_pretrain(samples):
 
 
 def collate_for_finetune(samples):
-    """Collate for fine-tuning"""
+    """Collate for fine-tuning with padding"""
+    import torch.nn.functional as F
+    
+    max_len = max(s['n_events'] for s in samples)
+    max_len = min(max_len, 2000)  # Cap at 2000
+    
+    event_types, time_intervals, deadline_dists = [], [], []
+    part_ids_list, masks = [], []
+    
+    for s in samples:
+        n = min(s['n_events'].item() if hasattr(s['n_events'], 'item') else s['n_events'], max_len)
+        
+        et = s['event_types'][:max_len]
+        if et.shape[0] < max_len:
+            et = F.pad(et, (0, max_len - et.shape[0]), value=0)
+        event_types.append(et)
+        
+        ti = s['time_intervals'][:max_len]
+        if ti.shape[0] < max_len:
+            ti = F.pad(ti, (0, max_len - ti.shape[0]), value=0)
+        time_intervals.append(ti)
+        
+        dd = s['deadline_dists'][:max_len]
+        if dd.shape[0] < max_len:
+            dd = F.pad(dd, (0, max_len - dd.shape[0]), value=0)
+        deadline_dists.append(dd)
+        
+        pi = s['part_ids'][:max_len]
+        if pi.shape[0] < max_len:
+            pi = F.pad(pi, (0, max_len - pi.shape[0]), value=1)
+        part_ids_list.append(pi)
+        
+        mask = torch.zeros(max_len)
+        mask[:n] = 1
+        masks.append(mask)
+    
     return {
-        'event_types': torch.stack([s['event_types'] for s in samples]),
-        'time_intervals': torch.stack([s['time_intervals'] for s in samples]),
-        'deadline_dists': torch.stack([s['deadline_dists'] for s in samples]),
-        'part_ids': torch.stack([s['part_ids'] for s in samples]),
+        'event_types': torch.stack(event_types),
+        'time_intervals': torch.stack(time_intervals),
+        'deadline_dists': torch.stack(deadline_dists),
+        'part_ids': torch.stack(part_ids_list),
+        'mask': torch.stack(masks),
         'risk': torch.LongTensor([s['risk'] for s in samples])
     }
 
@@ -306,10 +367,8 @@ def run_experiment():
             # Forward (use first n-1 events to predict event n)
             outputs = model(batch)
             
-            # Next-event prediction loss
-            # outputs['risk'] has shape (batch, 2) but we need next-event logits
-            # For simplicity, use risk head as proxy (not ideal but runs fast)
-            loss = nn.CrossEntropyLoss()(outputs['risk'], batch['next_events'].to(device))
+            # Next-event prediction loss (use event prediction head)
+            loss = nn.CrossEntropyLoss()(outputs['event'], batch['next_events'].to(device))
             
             loss.backward()
             torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
