@@ -1,0 +1,272 @@
+{
+  "rf_cv_auc_mean": 0.9060531874039939,
+  "rf_cv_f1_mean": 0.7428581397928118,
+  "feature_importances": [
+    {
+      "idx": 45,
+      "name": "total_events",
+      "importance": 0.09548121491434905
+    },
+    {
+      "idx": 42,
+      "name": "focus_ratio_mean",
+      "importance": 0.06425295977318843
+    },
+    {
+      "idx": 43,
+      "name": "focus_ratio_std",
+      "importance": 0.061402684706753786
+    },
+    {
+      "idx": 27,
+      "name": "submit_entropy",
+      "importance": 0.056487713829389344
+    },
+    {
+      "idx": 11,
+      "name": "text_paste_entropy",
+      "importance": 0.03761618908527893
+    },
+    {
+      "idx": 4,
+      "name": "text_remove_mean",
+      "importance": 0.03429070382641316
+    },
+    {
+      "idx": 9,
+      "name": "text_paste_std",
+      "importance": 0.030045662416396467
+    },
+    {
+      "idx": 41,
+      "name": "delete_ratio_std",
+      "importance": 0.02900612604466173
+    },
+    {
+      "idx": 39,
+      "name": "edit_ratio_std",
+      "importance": 0.028902166677918957
+    },
+    {
+      "idx": 38,
+      "name": "edit_ratio_mean",
+      "importance": 0.028902053734370114
+    },
+    {
+      "idx": 1,
+      "name": "text_insert_std",
+      "importance": 0.02820491998432146
+    },
+    {
+      "idx": 5,
+      "name": "text_remove_std",
+      "importance": 0.027465146383117995
+    },
+    {
+      "idx": 40,
+      "name": "delete_ratio_mean",
+      "importance": 0.026437113829682883
+    },
+    {
+      "idx": 8,
+      "name": "text_paste_mean",
+      "importance": 0.025949141383659613
+    },
+    {
+      "idx": 17,
+      "name": "focus_lost_std",
+      "importance": 0.023452633279164525
+    },
+    {
+      "idx": 0,
+      "name": "text_insert_mean",
+      "importance": 0.022165931802921136
+    },
+    {
+      "idx": 13,
+      "name": "focus_gained_std",
+      "importance": 0.02040230188094823
+    },
+    {
+      "idx": 12,
+      "name": "focus_gained_mean",
+      "importance": 0.019214726143280077
+    },
+    {
+      "idx": 7,
+      "name": "text_remove_entropy",
+      "importance": 0.01865080352214664
+    },
+    {
+      "idx": 21,
+      "name": "run_std",
+      "importance": 0.017935481917567424
+    },
+    {
+      "idx": 24,
+      "name": "submit_mean",
+      "importance": 0.017894573392371684
+    },
+    {
+      "idx": 20,
+      "name": "run_mean",
+      "importance": 0.0173238922566055
+    },
+    {
+      "idx": 25,
+      "name": "submit_std",
+      "importance": 0.01726466078121175
+    },
+    {
+      "idx": 23,
+      "name": "run_entropy",
+      "importance": 0.016098734729730762
+    },
+    {
+      "idx": 3,
+      "name": "text_insert_entropy",
+      "importance": 0.01533353807308449
+    },
+    {
+      "idx": 16,
+      "name": "focus_lost_mean",
+      "importance": 0.014896477156220703
+    },
+    {
+      "idx": 15,
+      "name": "focus_gained_entropy",
+      "importance": 0.014042296865838211
+    },
+    {
+      "idx": 19,
+      "name": "focus_lost_entropy",
+      "importance": 0.013630789533794777
+    },
+    {
+      "idx": 29,
+      "name": "consistency",
+      "importance": 0.0135609761414342
+    },
+    {
+      "idx": 32,
+      "name": "std_interval",
+      "importance": 0.013398459893006628
+    },
+    {
+      "idx": 30,
+      "name": "trend",
+      "importance": 0.013151160040430623
+    },
+    {
+      "idx": 35,
+      "name": "duration_per_event",
+      "importance": 0.012233091420368904
+    },
+    {
+      "idx": 22,
+      "name": "run_cv",
+      "importance": 0.012066295974181313
+    },
+    {
+      "idx": 26,
+      "name": "submit_cv",
+      "importance": 0.011948181053694459
+    },
+    {
+      "idx": 34,
+      "name": "max_interval",
+      "importance": 0.011838292764176379
+    },
+    {
+      "idx": 2,
+      "name": "text_insert_cv",
+      "importance": 0.011380824345622324
+    },
+    {
+      "idx": 31,
+      "name": "mean_interval",
+      "importance": 0.011297801286739054
+    },
+    {
+      "idx": 10,
+      "name": "text_paste_cv",
+      "importance": 0.011279670366457406
+    },
+    {
+      "idx": 6,
+      "name": "text_remove_cv",
+      "importance": 0.011058594601021956
+    },
+    {
+      "idx": 28,
+      "name": "improvement",
+      "importance": 0.010226619755482303
+    },
+    {
+      "idx": 14,
+      "name": "focus_gained_cv",
+      "importance": 0.010219224693632756
+    },
+    {
+      "idx": 18,
+      "name": "focus_lost_cv",
+      "importance": 0.009985979994575924
+    },
+    {
+      "idx": 33,
+      "name": "min_interval",
+      "importance": 0.007353313067682661
+    },
+    {
+      "idx": 37,
+      "name": "iqr_interval",
+      "importance": 0.0039020227612713383
+    },
+    {
+      "idx": 36,
+      "name": "median_interval",
+      "importance": 0.0022749937241790335
+    },
+    {
+      "idx": 44,
+      "name": "num_problems",
+      "importance": 7.386019165496107e-05
+    }
+  ],
+  "category_summary": {
+    "Cat1_事件统计": {
+      "sum": 0.566305089272649,
+      "mean": 0.020225181759737466,
+      "max": 0.056487713829389344,
+      "min": 0.009985979994575924,
+      "count": 28
+    },
+    "Cat2_行为轨迹": {
+      "sum": 0.09923673085477114,
+      "mean": 0.009923673085477114,
+      "max": 0.0135609761414342,
+      "min": 0.0022749937241790335,
+      "count": 10
+    },
+    "Cat3_情绪复合": {
+      "sum": 0.23890310476657586,
+      "mean": 0.039817184127762646,
+      "max": 0.06425295977318843,
+      "min": 0.026437113829682883,
+      "count": 6
+    },
+    "Cat4_元信息": {
+      "sum": 0.09555507510600401,
+      "mean": 0.04777753755300201,
+      "max": 0.09548121491434905,
+      "min": 7.386019165496107e-05,
+      "count": 2
+    }
+  },
+  "category_percent": {
+    "Cat1_事件统计": 0.566305089272649,
+    "Cat2_行为轨迹": 0.09923673085477114,
+    "Cat3_情绪复合": 0.23890310476657586,
+    "Cat4_元信息": 0.09555507510600401
+  }
+}
