@@ -117,9 +117,14 @@ def run_interpretability(model, dataset, device, batch_size=16):
     print(f"    时间模式标准差: {temporal.std():.4f}")
     print(f"    时间模式范围: [{temporal.min():.4f}, {temporal.max():.4f}]")
 
-    # 按风险分组比较
-    passed_temporal = temporal[risk_labels == 0]
-    failed_temporal = temporal[risk_labels == 1]
+    # 按风险分组比较 - temporal 是 (n_samples * seq_len) 维, 需要 repeat risk_labels
+    if len(temporal) == len(risk_labels) * 5 or len(temporal) % len(risk_labels) == 0:
+        ratio = len(temporal) // len(risk_labels)
+        risk_repeated = np.repeat(risk_labels, ratio)
+    else:
+        risk_repeated = risk_labels
+    passed_temporal = temporal[risk_repeated == 0]
+    failed_temporal = temporal[risk_repeated == 1]
     if len(passed_temporal) > 0:
         print(f"    通过学生时间模式均值: {passed_temporal.mean():.4f}")
     if len(failed_temporal) > 0:

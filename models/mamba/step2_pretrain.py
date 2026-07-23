@@ -106,7 +106,7 @@ def pretrain(model, dataset, device, epochs=2, batch_size=16):
 
     dataloader = DataLoader(
         dataset, batch_size=batch_size, shuffle=True,
-        collate_fn=collate_for_pretrain, drop_last=True  # 防止 BN 在最后 1 样本 batch 报错
+        collate_fn=collate_for_pretrain, drop_last=False
     )
 
     # v2: 学习率从 1e-3 降到 3e-4 + 余弦退火, 防初期 loss/grad 爆炸

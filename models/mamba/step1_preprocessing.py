@@ -33,7 +33,7 @@ from common.data_loader import load_ide_logs
 from models.mamba.model import encode_events, EVENT_TYPES
 
 
-MAX_EVENTS = 500
+MAX_EVENTS = 2000
 
 
 def preprocess(ide_logs_df=None, passed_df=None, max_events=MAX_EVENTS):

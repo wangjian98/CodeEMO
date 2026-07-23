@@ -134,7 +134,8 @@ def _freeze_backbone(model):
 
 
 def finetune_cv(pretrained_state, dataset, student_ids, y, device,
-                n_folds=5, n_epochs=8, batch_size=8):
+                n_folds=5, n_epochs=10, batch_size=8, seed=42):
+    """Step 5 v3: 强化版 - γ=3, 加风险头 BN, 多 seed 稳定评估"""
     """Step 5 v2: 强化版微调交叉验证"""
     print(f"\n[Step 5 v2] 预测微调 - {n_folds}折交叉验证 (Focal Loss)")
     print(f"  样本数: {len(dataset)}")
@@ -197,6 +198,7 @@ def finetune_cv(pretrained_state, dataset, student_ids, y, device,
         model.train()
         best_loss = float('inf')
         for epoch in range(n_epochs):
+            gamma = 2.0 + (epoch / max(n_epochs - 1, 1))   # 2.0 → 3.0 渐进, 防止初期过聚焦
             total_loss = 0.0
             n_batches = 0
 
@@ -219,7 +221,7 @@ def finetune_cv(pretrained_state, dataset, student_ids, y, device,
                     continue
 
                 loss = focal_loss(logits, targets, alpha=alpha,
-                                  gamma=2.0, label_smoothing=0.05)
+                                  gamma=gamma, label_smoothing=0.05)
 
                 if torch.isnan(loss) or torch.isinf(loss):
                     optimizer.zero_grad()

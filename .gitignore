@@ -34,3 +34,8 @@ env/
 
 # Logs
 *.log
+.venv/
+debug_*.py
+outputs/v2_compare/
+outputs/aug_compare/
+outputs/unified_compare/figures/

@@ -106,64 +106,25 @@ class S6Block(nn.Module):
         batch, seq_len, d_inner = x.shape
         d_state = A.shape[1]
 
-        # 离散化 (clamp 防止 dt*A 极端值导致 exp 爆炸)
-        dt = F.softplus(dt).clamp(max=5.0)
+        # 离散化
+        dt = F.softplus(dt)
         dt_expanded = dt.unsqueeze(-1)  # (batch, seq, d_inner, 1)
         A_expanded = A.unsqueeze(0).unsqueeze(0)  # (1, 1, d_inner, d_state)
-        # 关键: clamp 指数项, 防止长序列累积发散 -> NaN
-        dA = torch.exp((dt_expanded * A_expanded).clamp(min=-10.0, max=0.0))  # (batch, seq, d_inner, d_state)
+        dA = torch.exp(dt_expanded * A_expanded)  # (batch, seq, d_inner, d_state)
 
         B_expanded = B.unsqueeze(2)  # (batch, seq, 1, d_state)
         dB = dt_expanded * B_expanded  # (batch, seq, d_inner, d_state)
 
-        # 扫描计算 (chunked 版, 平衡速度和显存)
-        # 核心递推: h_t = dA_t * h_{t-1} + dB_t * x_t
-        # 解析解: h_t = sum_{k=0..t} (prod_{j=k+1..t} dA_j) * dB_k * x_k
-        # 设 dA_prefix[t] = prod_{j=0..t} dA_j (前块起点到 t)
-        # 块内并行: 用 dA_prefix[t] = dA_prefix[t]/dA_prefix[0] * dA_prefix[0]
-        #           = prefix_rel[t] * dA_prefix[0]
-        # 然后 h_t = dA_prefix[t] * (h_{-1} + sum_{k=0..t} h_inputs[k]/dA_prefix[k])
-        # 其中 h_{-1} 是块起点继承的前块状态
-        CHUNK = 16
-        ys = []
+        # 扫描计算
         h = torch.zeros(batch, d_inner, d_state, dtype=x.dtype, device=x.device)
-        for start in range(0, seq_len, CHUNK):
-            end = min(start + CHUNK, seq_len)
-            dA_c = dA[:, start:end]
-            dB_c = dB[:, start:end]
-            x_c = x[:, start:end]
-            C_c = C[:, start:end]
+        ys = []
 
-            h_inputs = dB_c * x_c.unsqueeze(-1)  # (B, Tc, di, ds)
+        for t in range(seq_len):
+            h = dA[:, t] * h + dB[:, t] * x[:, t].unsqueeze(-1)
+            y = torch.bmm(h, C[:, t].unsqueeze(-1)).squeeze(-1)
+            ys.append(y)
 
-            # 块内 dA_prefix[t] = prod_{k=start..t} dA_c[k]
-            log_dA = torch.log(dA_c.clamp(min=1e-10))
-            cumlog = torch.cumsum(log_dA, dim=1)
-            dA_prefix = torch.exp(cumlog.clamp(min=-50.0, max=10.0))  # (B, Tc, di, ds)
-
-            # 块内 h_t = dA_prefix[t] * (h_prev_at_start + cum_ratio[t])
-            # h_prev_at_start = h (前块末尾状态, 已是 prod_{k<start} * ... 的累积)
-            # 在本块 dA_prefix 框架下, 前块 h 等价于:
-            #   h = sum_{k<start} (prod_{j=k+1..start-1} dA_j) * dB_k * x_k
-            # 这就是 prod_{k=start..t} dA_k * h_scaled + 本块累积
-            # 其中 h_scaled = h / dA_prefix[0] 不对, 应该 h_at_start = h (已经是正确递推值)
-            # 所以块内递推从 h 开始: 直接转成 ratio 形式
-            ratio = h_inputs / dA_prefix.clamp(min=1e-10)
-            cum_ratio = torch.cumsum(ratio, dim=1)
-            # 关键: 把前块状态 h 转成本块框架下的等价值
-            # 在新块 dA_prefix[0] 之前是前块的 dA 累积, 故 h 在本块 t=0 处的等价值:
-            #   effective_prev = h / dA_prefix[0]  (因为 h_t=0 = dA_prefix[0] * effective_prev)
-            h_in_block = h[:, None, :, :] / dA_prefix[:, 0:1].clamp(min=1e-10)  # (B, 1, di, ds)
-            cum_ratio = cum_ratio + h_in_block
-            h_block = dA_prefix * cum_ratio  # (B, Tc, di, ds)
-            h_block = h_block.clamp(-1e3, 1e3)
-
-            y_block = torch.einsum('btsi,bti->bts', h_block, C_c)
-            ys.append(y_block)
-
-            h = h_block[:, -1]
-
-        y = torch.cat(ys, dim=1)
+        y = torch.stack(ys, dim=1)
         y = y + x * D
 
         return y
@@ -504,9 +465,7 @@ class FullMambaStudent(nn.Module):
         self.event_head = nn.Linear(d_model, n_event_types)
 
         # Step 5b: 风险预测头 - 输入维度 +3 接收手工行为特征
-        #   加 BN: 让手工特征 (0-1 范围) 和表征 (任意量纲) 先对齐
         self.risk_head = nn.Sequential(
-            nn.BatchNorm1d(d_model * 2 + 3),
             nn.Linear(d_model * 2 + 3, d_model),
             nn.GELU(),
             nn.Dropout(0.3),
