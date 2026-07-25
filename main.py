@@ -31,6 +31,11 @@ MODEL_FEATURE_MAP = {
     ('mamba', '7dim'):   ('models/mamba/train_ms.py',     ['--folds', '{folds}', '--output-dir', '{outdir}', '--max-seq-len', '{max_seq}',
                                                            '--pretrain-epochs', '2', '--finetune-epochs', '4']),
     ('mamba', '46dim'):  ('models/mamba/train_46d.py',    ['--folds', '{folds}', '--output-dir', '{outdir}']),
+    # RF / Transformer 用统一训练入口，输出到 outputs/unified_compare/
+    ('rf', '7dim'):      ('models/rf/train_unified.py',   ['--features', '7d', '--folds', '{folds}', '--output-dir', '{outdir}']),
+    ('rf', '46dim'):     ('models/rf/train_unified.py',   ['--features', '46d', '--folds', '{folds}', '--output-dir', '{outdir}']),
+    ('transformer', '7dim'):  ('models/transformer/train_unified.py', ['--features', '7d', '--folds', '{folds}', '--output-dir', '{outdir}', '--device', 'cpu']),
+    ('transformer', '46dim'): ('models/transformer/train_unified.py', ['--features', '46d', '--folds', '{folds}', '--output-dir', '{outdir}', '--device', 'cpu']),
 }
 
 
@@ -82,7 +87,7 @@ def main():
                         help='输出根目录')
     args = parser.parse_args()
 
-    model_list = ['lstm', 'bilstm', 'mamba'] if args.model == 'all' else [args.model]
+    model_list = ['lstm', 'bilstm', 'mamba', 'rf', 'transformer'] if args.model == 'all' else [args.model]
     feat_list = ['7dim', '46dim'] if args.features == 'all' else [args.features]
 
     print("=" * 60)

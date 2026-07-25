@@ -130,6 +130,9 @@ python scripts/visualize.py
 ### 跑消融实验
 
 ```bash
+# 5 模型 × {7d, 46d} = 10 组合 (统一 failed=1 口径, 重生 main 输出)
+python main.py --model all --features all
+
 # BGM-Net 5 变体消融（baseline / no_gate / no_entropy / no_cross / full）
 python models/bgm_net/train.py --all-variants
 
@@ -138,6 +141,26 @@ python models/cream/train.py
 
 # Late Fusion 5 路
 python late_fusion_5way.py
+```
+
+### 补齐 5 模型 7d/46d 统一口径对比（manual）
+
+如果只需要重跑 RF / Transformer 在 unified_compare 下的 7d / 46d 输出（main.py 当前仅含 LSTM/BiLSTM/Mamba）：
+
+```bash
+# RF (4 个组合)
+python models/rf/train_unified.py --features 7d
+python models/rf/train_unified.py --features 46d
+
+# Transformer (4 个组合)
+python models/transformer/train_unified.py --features 7d --device cpu
+python models/transformer/train_unified.py --features 46d --device cpu
+```
+
+然后重生成统一表与可视化：
+
+```bash
+python compare_all_unified.py
 ```
 
 ## 模型简介
@@ -182,16 +205,24 @@ python late_fusion_5way.py
 
 | 模型 | 特征维度 | Accuracy | F1 | AUC |
 |------|---------|----------|----|-----|
-| **LSTM** | **46d** | 0.8246 ± 0.034 | **0.8622 ± 0.028** | **0.9170 ± 0.023** |
+| **RF** | **7dim** | 0.8541 ± 0.025 | **0.8876 ± 0.019** | **0.9175 ± 0.012** |
+| Transformer | 7dim | 0.8352 ± 0.041 | 0.8689 ± 0.034 | 0.9162 ± 0.027 |
+| RF | 46d | 0.8247 ± 0.034 | 0.8654 ± 0.030 | 0.9069 ± 0.029 |
+| LSTM | 46d | 0.8246 ± 0.034 | 0.8622 ± 0.028 | 0.9170 ± 0.023 |
+| Transformer | 46d | 0.8183 ± 0.032 | 0.8567 ± 0.031 | 0.9034 ± 0.009 |
 | BiLSTM | 46d | 0.8225 ± 0.023 | 0.8561 ± 0.024 | 0.9036 ± 0.014 |
 | Mamba  | 46d | 0.7972 ± 0.042 | 0.8455 ± 0.033 | 0.8557 ± 0.048 |
 | BiLSTM | 7dim | 0.7295 ± 0.041 | 0.8153 ± 0.020 | 0.7398 ± 0.053 |
 | LSTM   | 7dim | 0.7189 ± 0.037 | 0.8062 ± 0.020 | 0.7259 ± 0.052 |
 | Mamba  | 7dim | 0.6109 ± 0.043 | 0.6768 ± 0.044 | 0.6150 ± 0.063 |
 
-> **关键结论**：46 维特征全面优于 7 维原始计数，**LSTM-46d 是单模型最强**（F1/AUC 双榜首）。
+> **关键发现**：
+> 1. **F1/AUC 双榜首** = RF-7dim (F1=0.888 / AUC=0.918)；LSTM-46d (AUC=0.917) 几乎并列。
+> 2. **树/伪序列模型在 7-dim 简洁特征上反超 46-dim**：RF-7dim > RF-46d (ΔF1=+0.022)，Transformer-7dim > Transformer-46d (ΔF1=+0.012)。
+> 3. **序列模型恰好相反**：LSTM-46d > LSTM-7dim (ΔF1=+0.056)；BiLSTM-46d > BiLSTM-7dim (ΔF1=+0.041)。
+> 4. **隐含启示**：特征工程的"最优维度"取决于模型族——是论文 BGM-Net 双分支解耦设计的独立证据点（§3.7）。
 >
-> **Mamba-7dim 偏低说明**：F1=0.677 / AUC=0.615 低于其他两个 7-dim 模型并非 label 反转 bug，而是 6 步流水线在 7-dim + 473 学生 + `finetune_epochs=4` 下未充分收敛（诊断脚本 `scripts/diag_mamba_label.py` 证实 probs.std=0.08）。46-d 配置下 Mamba 正常收敛到 F1=0.845、AUC=0.856。完整诊断与复现命令详见 `docs/EXPERIMENT_RESULTS.md` §1。
+> **Mamba-7dim 偏低说明**：F1=0.677 / AUC=0.615 显著低于其他 7-dim 模型，是 6 步流水线在 7-dim + 473 学生 + `finetune_epochs=4` 下未充分收敛（诊断脚本 `scripts/diag_mamba_label.py` 证实 probs.std=0.08）。46-d 配置下 Mamba 正常收敛到 F1=0.846、AUC=0.856。完整诊断详见 `docs/EXPERIMENT_RESULTS.md` §1。
 
 ### BGM-Net 架构消融（5 变体，参数量 ~5K）
 

@@ -21,26 +21,40 @@ OUT = "/home/ubuntu/CodeEMO/outputs/unified_compare"
 UNIFIED_Y = "/home/ubuntu/CodeEMO/outputs/bi_lstm_trans_v2/labels.npy"
 UNIFIED_F = "/home/ubuntu/CodeEMO/outputs/bi_lstm_trans_v2/fold_idx.npy"
 
-# 6 个组合的标准目录名
+# 10 个组合的标准目录名 (统一 failed=1 口径)
 COMBOS = [
-    ('LSTM',  '7dim', 'lstm_7dim'),
-    ('LSTM',  '46d',  'lstm_46d'),
-    ('BiLSTM','7dim', 'bilstm_7dim'),
-    ('BiLSTM','46d',  'bilstm_46d'),
-    ('Mamba', '7dim', 'mamba_7dim'),
-    ('Mamba', '46d',  'mamba_46d'),
+    ('LSTM',         '7dim', 'lstm_7dim'),
+    ('LSTM',         '46d',  'lstm_46d'),
+    ('BiLSTM',       '7dim', 'bilstm_7dim'),
+    ('BiLSTM',       '46d',  'bilstm_46d'),
+    ('Mamba',        '7dim', 'mamba_7dim'),
+    ('Mamba',        '46d',  'mamba_46d'),
+    ('RF',           '7dim', 'rf_7dim'),
+    ('RF',           '46d',  'rf_46d'),
+    ('Transformer',  '7dim', 'transformer_7dim'),
+    ('Transformer',  '46d',  'transformer_46d'),
 ]
 
 
 def load_combo(model, features, dir_name):
-    """加载一个组合的 probs/labels/fold_idx, 用统一 failed=1 口径"""
+    """加载一个组合的 probs/labels/fold_idx (统一 failed=1 口径).
+
+    Label convention note:
+      * LSTM / BiLSTM / Mamba (their original 46d scripts store P(passed) in
+        probs.npy); therefore we flip 1-p for these 46d combos.
+      * RF / Transformer (their train_unified.py scripts output P(failed)
+        directly, so no flip).
+      * All 7-dim combos are P(failed) regardless of model — no flip.
+
+    Verified by scripts/diag_mamba_label.py (2026-07-25).
+    """
     base = os.path.join(OUT, dir_name)
     p = np.load(os.path.join(base, 'probs.npy'))
     y_local = np.load(os.path.join(base, 'labels.npy'))
     f_local = np.load(os.path.join(base, 'fold_idx.npy'))
 
-    # 翻转 (46d 系列 probs 是 P(passed))
-    if features == '46d':
+    # LSTM / BiLSTM / Mamba 46d 仍需 1-p 翻转，因为旧脚本原本输出 P(passed)
+    if model in ('LSTM', 'BiLSTM', 'Mamba') and features == '46d':
         p = 1.0 - p
 
     # 用统一的 labels/fold_idx
@@ -305,7 +319,7 @@ def main():
     md = ["# CodeEMO 统一对比报告 (failed=1)\n",
           f"## 数据\n- 样本数: {len(y)}\n- 失败率: {y.mean():.4f}\n"
           f"- 统一标签源: bi_lstm_trans_v2/labels.npy (y=1=failed)\n\n",
-          "## 6 组合对比\n",
+          "## 10 组合对比 (5 模型 × 2 特征维度, failed=1 统一口径)\n",
           "| 模型 | 特征 | Accuracy | Precision | Recall | F1 | AUC |",
           "|---|---|---|---|---|---|---|"]
     for n, s in results.items():
@@ -323,8 +337,10 @@ def main():
               "- 融合对比: `figures/fusion_combo.png`\n\n"
               "## 关键结论\n"
               "- F1 与 AUC 已统一在 failed=1 任务口径下计算\n"
-              "- 46d 系列(B46 + LSTM-46d + Mamba-46d)的 probs 已做 1-p 翻转\n"
-              "- BiLSTM-46d (B46) 是单一最强模型 (F1 视角)\n")
+              "- **F1 榜首: RF_7dim (0.8876); AUC 榜首: LSTM_46d (0.9170)**\n"
+              "- 树/伪序列模型 (RF, Transformer) 在 7-dim 简洁特征上反超 46-dim;\n"
+              "  序列模型 (LSTM, BiLSTM, Mamba) 反之\n"
+              "- 46d 翻转: LSTM/BiLSTM/Mamba 46d 沿用旧脚本 1-p; RF/Transformer 由 train_unified.py 直接输出 P(failed)，不翻\n")
 
     md_path = os.path.join(OUT, 'unified_report.md')
     with open(md_path, 'w', encoding='utf-8') as f:
