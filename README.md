@@ -190,6 +190,8 @@ python late_fusion_5way.py
 | Mamba  | 7dim | 0.6109 ± 0.043 | 0.6768 ± 0.044 | 0.6150 ± 0.063 |
 
 > **关键结论**：46 维特征全面优于 7 维原始计数，**LSTM-46d 是单模型最强**（F1/AUC 双榜首）。
+>
+> **Mamba-7dim 偏低说明**：F1=0.677 / AUC=0.615 低于其他两个 7-dim 模型并非 label 反转 bug，而是 6 步流水线在 7-dim + 473 学生 + `finetune_epochs=4` 下未充分收敛（诊断脚本 `scripts/diag_mamba_label.py` 证实 probs.std=0.08）。46-d 配置下 Mamba 正常收敛到 F1=0.845、AUC=0.856。完整诊断与复现命令详见 `docs/EXPERIMENT_RESULTS.md` §1。
 
 ### BGM-Net 架构消融（5 变体，参数量 ~5K）
 

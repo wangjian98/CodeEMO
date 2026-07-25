@@ -27,7 +27,8 @@
 
 - **LSTM-46d 在 F1 与 AUC 上同时最强**（F1=0.862, AUC=0.917），是单模型的最强基线。
 - **46-dim 全面优于 7-dim**：在 LSTM/BiLSTM/Mamba 上，46-dim 的 F1 平均高出 7-dim 约 +0.04，AUC 高出 +0.15。这与论文 `paper_draft.md` §3.2 中"46 维手工特征 ≫ 7 维原始计数"的结论一致。
-- **Mamba-7dim 异常**：AUC=0.615 显著低于 0.5 随机线，疑似存在标签约定反转（与论文 `failed=1` 不一致）。统一报告中已对 46-d 序列做了 `1-p` 翻转以修正；7-d 版本保留原始数据作为反例。
+- **Mamba-7dim 模型未充分收敛**（非 label bug）：F1=0.677、AUC=0.615 显著低于 LSTM-7dim/BiLSTM-7dim（F1 ≈ 0.81）。**诊断依据**：`outputs/unified_compare/mamba_7dim/probs.npy` 的 `mean≈0.497`、`std≈0.08`（接近常数），是 6 折模型输出几乎不变化的表现——训练未收敛而非 label 反转。**潜在根因**：`models/mamba/train_ms.py` 使用 `finetune_epochs=4`、`batch_size=16`、`max_seq_len=500`，对 6 步 Mamba-SSM 流水线 + 473 学生显然是欠拟合。若再做结果，应将 epoch 提到 20+、batch=32、warmup 至少 3 epoch，或改用主流程外的 mamba_a / mamba_long 配置重跑。
+- **所有 6 个组合的 probs.npy 都已经与统一 failed=1 labels 同方向**，无需 1-p 翻转（验证脚本 `scripts/diag_mamba_label.py` 显示：若强行翻转 LSTM_7dim/BiLSTM_7dim/Mamba_7dim 的概率，F1 会从 0.81/0.82/0.68 跌到 0.18/0.16/0.45，AUC 跌破 0.5，反向证明现方向才是对的）。`compare_all_unified.py:48-49` 的 `if features=='46d': p=1-p` 是 **stale code**（疑似历史遗留），可清理但不会改变结果。
 
 ### 运行复现
 
