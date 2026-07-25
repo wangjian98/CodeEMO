@@ -157,7 +157,8 @@ def train_one_fold(model, optimizer, scheduler, bce, device,
 
 def main(output_dir=None, folds=5, epochs=80, batch_size=32, patience=10, seed=42,
           disable_tree=False, disable_seq=False, disable_attn=False,
-          tree_depth=2, tree_width=None, tree_use_skip=False, tree_use_bn=False):
+          tree_depth=2, tree_width=None, tree_use_skip=False, tree_use_bn=False,
+          dump_gates=False):
     if output_dir is None:
         output_dir = os.path.join(_PROJECT_ROOT, 'outputs', 'unified_compare', 'hdm_net')
     os.makedirs(output_dir, exist_ok=True)
@@ -198,6 +199,8 @@ def main(output_dir=None, folds=5, epochs=80, batch_size=32, patience=10, seed=4
     skf = StratifiedKFold(n_splits=folds, shuffle=True, random_state=seed)
     fold_idx_arr = np.zeros(n, dtype=int)
     all_probs = np.zeros(n, dtype=np.float64)
+    fold_idx_arr = np.zeros(n, dtype=int)
+    all_gates = np.zeros((n, 3), dtype=np.float64) if dump_gates else None
     fold_metrics = []
 
     for fi, (tr, va) in enumerate(skf.split(X7, y_eval), 1):
@@ -236,6 +239,16 @@ def main(output_dir=None, folds=5, epochs=80, batch_size=32, patience=10, seed=4
 
         all_probs[va] = probs_va
         fold_idx_arr[va] = fi - 1
+        if dump_gates:
+            # eval mode -> capture PIG gates for val set
+            model.eval()
+            with torch.no_grad():
+                x_tree_va_t = torch.tensor(x_tree_va, dtype=torch.float32, device=device)
+                tree_probs_va_t = torch.tensor(tree_probs_va, dtype=torch.float32, device=device)
+                x_seq_va_t = torch.tensor(x_seq_va, dtype=torch.float32, device=device)
+                x_att_va_t = torch.tensor(x_att_va, dtype=torch.float32, device=device)
+                _, gates_va = model(x_tree_va_t, tree_probs_va_t, x_seq_va_t, x_att_va_t, return_gate=True)
+                all_gates[va] = gates_va.cpu().numpy()
         yhat = (probs_va > 0.5).astype(int)
         m = metric_dict(y_eval[va], yhat, probs_va)
         fold_metrics.append(m)
@@ -253,6 +266,9 @@ def main(output_dir=None, folds=5, epochs=80, batch_size=32, patience=10, seed=4
     np.save(os.path.join(output_dir, 'probs.npy'), all_probs)
     np.save(os.path.join(output_dir, 'labels.npy'), y_eval.astype(np.int8))
     np.save(os.path.join(output_dir, 'fold_idx.npy'), fold_idx_arr)
+    if dump_gates:
+        np.save(os.path.join(output_dir, 'pig_gates.npy'), all_gates)
+        print(f"[dump] pig_gates.npy saved (shape={all_gates.shape})")
 
     out = {
         'model': 'HDM-Net',
@@ -305,6 +321,7 @@ if __name__ == '__main__':
     p.add_argument('--tree-width', type=int, default=32, help='Hidden dim of TreeHead (matches d by default)')
     p.add_argument('--tree-skip', action='store_true', help='Use residual/skip connection in TreeHead')
     p.add_argument('--tree-bn', action='store_true', help='Use LayerNorm in TreeHead')
+    p.add_argument('--dump-gates', action='store_true', help='Dump per-sample PIG gate values to npy')
     args = p.parse_args()
     # Override via --variant if set
     if args.variant == 'no_tree':  args.disable_tree = True
@@ -315,4 +332,5 @@ if __name__ == '__main__':
          disable_tree=args.disable_tree, disable_seq=args.disable_seq,
          disable_attn=args.disable_attn,
          tree_depth=args.tree_depth, tree_width=args.tree_width,
-         tree_use_skip=args.tree_skip, tree_use_bn=args.tree_bn)
+         tree_use_skip=args.tree_skip, tree_use_bn=args.tree_bn,
+         dump_gates=args.dump_gates)

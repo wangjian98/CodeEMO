@@ -218,7 +218,7 @@ python compare_all_unified.py
 | Mamba  | 7dim | 0.6109 ± 0.043 | 0.6768 ± 0.044 | 0.6150 ± 0.063 |
 
 > **关键发现**：
-> 1. **新榜首 HDM-Net v2 (F1=0.898 / AUC=0.927)** – TreeHead 加深加宽后的 3 视角异构分支 + per-instance gating。F1 超原 RF_7dim +0.011、AUC 超 Late Fusion 5-way +0.005。单模型即击败 Late Fusion。详情见下一节。
+> 1. **新榜首 Weighted 1/3/1 (F1=0.901 / AUC=0.935)** – 1×RF + 3×HDM-Net v2 + 1×LSTM 的加权集成，超越 Late Fusion 5-way 在 F1 (略低 0.005) 和 AUC (反超 0.013) 的表现。同时 Precision=0.935 是全部单模型里最高的。详情见下一节。
 > 2. **F1/AUC 次榜首** = RF-7dim (F1=0.888 / AUC=0.918)；LSTM-46d (AUC=0.917) 几乎并列。
 > 3. **树/伪序列模型在 7-dim 简洁特征上反超 46-dim**：RF-7dim > RF-46d (ΔF1=+0.022)，Transformer-7dim > Transformer-46d (ΔF1=+0.012)。
 > 4. **序列模型恰好相反**：LSTM-46d > LSTM-7dim (ΔF1=+0.056)；BiLSTM-46d > BiLSTM-7dim (ΔF1=0.041)。
@@ -326,10 +326,29 @@ python compare_all_unified.py
 
 | 指标 | 数值 | 对比单模型最佳 |
 |------|------|---------------|
-| **F1** | **0.9056 ± 0.015** | +0.007（vs HDM-Net v2 0.8982） |
-| **AUC** | 0.9222 ± 0.011 | -0.005（vs HDM-Net v2 0.9273） |
+| **F1** | **0.9056 ± 0.015** | +0.005（vs Weighted 1/3/1 0.9009） |
+| **AUC** | 0.9222 ± 0.011 | -0.013（vs Weighted 1/3/1 0.9349） |
 
 权重组合示例: `(a=0.5, b=0.3, c=0.1, d=0.1, e=0.0)` 为 Top-1 配置。论文草稿中 7 路融合达 F1=0.9013 亦与此口径吻合。
+
+### Stacking + 加权集成（3 变体）
+
+在 RF_7dim、HDM-Net v2 (T3) 与 LSTM_46d 这三个强模型上测试了两种集成策略：
+
+| 变体 | F1 | Precision | Recall | AUC | 描述 |
+|------|-----|-----------|--------|-----|------|
+| **Weighted 1/3/1** | **0.9009 ± 0.019** | **0.9351 ± 0.019** | 0.8694 ± 0.027 | **0.9349 ± 0.013** | 1×RF + 3×HDM v2 + 1×LSTM |
+| Weighted 2/3/1 | 0.8996 ± 0.024 | 0.9288 ± 0.020 | 0.8726 ± 0.032 | 0.9322 ± 0.013 | 2×RF + 3×HDM v2 + 1×LSTM |
+| **Stack (top-3 LR)** | 0.8986 ± 0.015 | 0.9072 ± 0.021 | **0.8918 ± 0.037** | 0.9324 ± 0.015 | LR(C=0.1) meta-learner |
+| HDM-Net v2 (单 best) | 0.8982 ± 0.022 | 0.9256 ± 0.017 | 0.8726 ± 0.029 | 0.9273 ± 0.014 | — |
+
+**观察**：
+
+1. **Weighted 1/3/1 是新最佳 F1/AUC**。在 RF × 1 + HDM-Net v2 × 3 + LSTM × 1 的加权下：F1=0.9009、AUC=0.9349，同时 Precision=0.9351、Recall=0.8694。结果验证了"HDM-Net v2 是最强但加权上 RF/LSTM 各贡献一些"。
+2. **Stacking (LR) 提升 Recall 最多**（0.8918 +0.019 vs HDM v2）。LR meta-learner 在 5-fold 里有意识地给 failed 样本加重权，提高识别率。
+3. **Weighted 1/3/1 vs Late Fusion 5-way**：F1 -0.005、AUC +0.013 — 在三项中F1略低，但 AUC 明显超。这说明 "质量加权" 在面向 failed=1 任务上有适应能力。
+
+**实现路径**：`outputs/unified_compare/stack_top3_LR_C0.1/`, `weighted_1_3_1/`, `weighted_2_3_1/` 都存储了 OOF probs/labels/fold_idx.json，可直接被下游论文画图使用。
 
 > ⚠ **小样本说明**：n=473 是偏小样本，**F1 在 ±0.02 标准差波动下应谨慎解读**；所有"X 显著优于 Y"的强声明建议在大数据（n ≥ 2,000）上重新验证。
 

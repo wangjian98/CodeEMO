@@ -176,7 +176,7 @@ class HDMNet(nn.Module):
         nn.init.normal_(self.head.weight, std=0.05)
         nn.init.zeros_(self.head.bias)
 
-    def forward(self, x_tree, tree_probs, x_seq, x_att):
+    def forward(self, x_tree, tree_probs, x_seq, x_att, return_gate=False):
         B = x_tree.size(0)
         if self.disable_tree:
             h_t = torch.zeros(B, self.d, device=x_tree.device, dtype=x_tree.dtype)
@@ -192,8 +192,15 @@ class HDMNet(nn.Module):
             h_a = torch.zeros(B, self.d, device=x_tree.device, dtype=x_tree.dtype)
         else:
             h_a = self.attn(x_att)
-        h_final = self.pig(h_t, h_s, h_a)
-        return self.head(h_final).squeeze(-1)
+        # also expose gate (softmax over 3 branches) for analysis
+        cat = torch.cat([h_t, h_s, h_a], dim=-1)
+        gate_logits = self.pig.gate_mlp(cat)
+        gates = torch.softmax(gate_logits, dim=-1)
+        h_final = gates[:, 0:1] * h_t + gates[:, 1:2] * h_s + gates[:, 2:3] * h_a
+        out = self.head(h_final).squeeze(-1)
+        if return_gate:
+            return out, gates
+        return out
 
 
 def count_parameters(model):
