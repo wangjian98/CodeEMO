@@ -42,6 +42,7 @@ COMBOS = [
     ('Per-fold stack (top-5)', '—', 'perfold_stack_top5'),
     ('Per-fold BMA (top-5)', '—', 'perfold_bma_top5'),
     ('RF-LSTM v3',           '—', 'rf_lstm_v3'),
+    ('RF-LSTM v4 (pre-norm)', '—', 'rf_lstm_v4'),
     ('HDM-Net (no_tree)','—', 'hdm_net_no_tree'),
     ('HDM-Net (no_seq)', '—', 'hdm_net_no_seq'),
     ('HDM-Net (no_attn)','—', 'hdm_net_no_attn'),

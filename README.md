@@ -392,6 +392,7 @@ python compare_all_unified.py
 | **v1 (RF-LSTM)** | RF probs broadcast 到每个 LSTM step | ~40K | 0.8766 | 0.9219 | 基线 |
 | v2 (RF-LSTM-Attn) | + hidden=64, 2-layer BiLSTM, cross-view attention | 222K | 0.7980 (FAILED) | 0.4521 | **退化到 "全预测 failed"** (R=1.0)，参数过拟合 |
 | **v3 (RF-LSTM-Attn)** | hidden=32, 1-layer BiLSTM, **self-attention + residual** | 28.9K | **0.8809 ± 0.016** | **0.9253 ± 0.017** | ✅ 解决过拟合问题，F1 +0.004 vs v1 |
+| v4 (pre-norm + 2x attn + LN) | + Pre-norm BiLSTM + 2x self-attention + LayerNorm + Residual | 48K | 0.8194 ± 0.024 | 0.8258 ± 0.036 | ⚠️ 退化 -0.06 F1：现代 modular 设计**过参数化** |
 
 **v3 架构**：
 
@@ -424,6 +425,12 @@ RF probs (frozen) ──────────>┘     │
 4. v3 **远低于 Weighted 1/3/1**（−0.020）——post-hoc 加权在小样本上仍是 SOTA
 
 **结论**：架构级融合（v3）vs post-hoc 加权（Weighted 1/3/1）——**在小数据 n=473 上，post-hoc 更稳定**。架构级融合在大数据上可能反超，但需要验证。
+
+**v4 退化原因分析**：
+- **Pre-norm + 2 LayerNorms** 让训练不崩（不像 v2 collapse）但仍**过参数化**
+- **2 层 self-attention** 在 4 个 segment 上太多——attention 抓不到稳定模式
+- **48K params** 比 v3 (29K) 多 67%，但泛化能力反降
+- **v3 才是这个架构融合路线的 sweet spot**：F1=0.8809, AUC=0.9253
 
 > ⚠ **小样本说明**：n=473 是偏小样本，**F1 在 ±0.02 标准差波动下应谨慎解读**；所有"X 显著优于 Y"的强声明建议在大数据（n ≥ 2,000）上重新验证。
 
