@@ -33,6 +33,7 @@ COMBOS = [
     ('RF',           '46d',  'rf_46d'),
     ('Transformer',  '7dim', 'transformer_7dim'),
     ('Transformer',  '46d',  'transformer_46d'),
+    ('HDM-Net', '—', 'hdm_net'),
 ]
 
 
