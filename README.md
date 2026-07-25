@@ -350,6 +350,39 @@ python compare_all_unified.py
 
 **实现路径**：`outputs/unified_compare/stack_top3_LR_C0.1/`, `weighted_1_3_1/`, `weighted_2_3_1/` 都存储了 OOF probs/labels/fold_idx.json，可直接被下游论文画图使用。
 
+### Bayesian Model Averaging + Per-Fold Weighted Stacking
+
+为了同时研究**集成质量**与**可解释性**，跑了 2 个贝叶斯 / 折间方案。
+
+#### Bayesian Model Averaging (BMA, 8 个 base models)
+
+**思路**：weight_i = exp(-OOF-log-loss_i / T) / Σ exp(...)。T 是温度参数，T → 0 则取最 confident single，T → ∞ 则退化为均匀平均。
+
+| T | F1 | AUC | Precision | Recall |
+|---|------|------|-----------|--------|
+| T=0.1 | 0.8915 | 0.9314 | 0.9368 | 0.8503 |
+| **T=1.0** (保存) | **0.8875 ± 0.023** | **0.9325 ± 0.012** | 0.9364 | 0.8439 |
+| T=5.0 | 0.8867 | 0.9303 | 0.9301 | 0.8471 |
+| T=100 (≈ uniform) | 0.8867 | 0.9291 | 0.9301 | 0.8471 |
+
+#### Per-Fold Weighted Stacking (top-5)
+
+**思路**：对每个 fold k，用**其余 4 个 fold 的 OOF 数据**训练一个 LR meta-learner，预测 fold k。这样每个 fold 有一套专属的 ensemble 权重——暴露"哪些模型在哪些 fold 上更可靠"。
+
+| 指标 | F1 | AUC | Precision | Recall |
+|------|------|------|-----------|--------|
+| Per-fold stacking (LR per fold) | **0.8953 ± 0.017** | 0.9346 | 0.9195 | 0.8726 |
+| Per-fold BMA (uncertainty per fold) | 0.8898 ± 0.017 | **0.9348** | 0.9337 | 0.8503 |
+
+#### 可解释性分析（key findings）
+
+1. **BMA 信任 HDM-Net v2 最多**（log-loss=0.315 最低），Transformer_46d 几乎被丢弃（log-loss=2.29 是 6-7x worse）→ **BMA 自动识别 "坏掉的模型" 并降权**
+2. **Per-fold 权重 std 极小**（0.006-0.032）→ **5 个 base model 都很稳定，没有"看 fold 行事"的 volatile 模型**
+3. **模型对 correlation 高**：RF_7dim ↔ HDM-Net v2 = **0.964**（高度冗余），LSTM_46d ↔ BiLSTM_46d = **0.945** → 这两组 ensemble 提升空间不大；LSTM_46d ↔ RF_7dim = 0.844 才**真正提供 diversity**
+4. **错误分析**：64/473 = 13.5% 误分类，其中 40 是 failed=1 被漏报 (FN)，24 是 passed=0 被错报 (FP)。**5 个最自信误判都是 "model says passed, truth is failed"**——模型**系统性低估这些 failed=1 样本**。这指向需要新信号来源（如 SRL、engagement trajectories）才能突破。
+
+**完整 analysis 见** [`docs/INTERPRETABILITY_ANALYSIS.md`](docs/INTERPRETABILITY_ANALYSIS.md)
+
 > ⚠ **小样本说明**：n=473 是偏小样本，**F1 在 ±0.02 标准差波动下应谨慎解读**；所有"X 显著优于 Y"的强声明建议在大数据（n ≥ 2,000）上重新验证。
 
 **完整消融表 + Late Fusion 权重搜索结果 + 可视化产物清单**：参见 [`docs/EXPERIMENT_RESULTS.md`](docs/EXPERIMENT_RESULTS.md)。
