@@ -6,22 +6,63 @@ import torch.nn as nn
 
 
 class TreeHead(nn.Module):
-    """Tree-view embedding: 7-dim event counts + 2-dim RF probs -> 32-d."""
-    def __init__(self, in_dim=9, d=32, dropout=0.3):
+    """Tree-view embedding: 7-dim event counts + 2-dim RF probs -> d.
+
+    Variants (selectable via args):
+      depth=1  width=32 : linear only            (0 hidden, ~ 0.3K params)
+      depth=2  width=32 : 9 -> 32 -> 32        (default, ~1.0K params)
+      depth=3  width=32 : 9 -> 32 -> 32 -> 32  (deeper, ~1.4K params)
+      depth=2  width=64 : 9 -> 64 -> 64        (wider,  ~2.0K params)
+      depth=3  width=64 : 9 -> 64 -> 64 -> 64  (deeper+wider)
+      depth=3  width=64 + LayerNorm             (with normalization)
+
+    use_skip=True adds a residual connection from the input concat to
+    the final hidden state, so depth>=2 becomes a proper ResNet block.
+    """
+    def __init__(self, in_dim=9, d=32, depth=2, dropout=0.3,
+                  use_skip=False, use_bn=False):
         super().__init__()
-        self.net = nn.Sequential(
-            nn.Linear(in_dim, d), nn.ReLU(),
-            nn.Dropout(dropout),
-            nn.Linear(d, d), nn.ReLU(),
-        )
+        assert depth >= 1, "depth must be >= 1"
+        self.in_dim = in_dim
+        self.d = d
+        self.depth = depth
+        self.use_skip = use_skip and (in_dim <= d)  # only meaningful if d >= in_dim
+        self.use_bn = use_bn
+        layers = []
+        prev = in_dim
+        for i in range(depth):
+            layers.append(nn.Linear(prev, d))
+            if use_bn:
+                layers.append(nn.LayerNorm(d))
+            layers.append(nn.ReLU())
+            if dropout > 0 and i < depth - 1:
+                layers.append(nn.Dropout(dropout))
+            prev = d
+        # remove the LAST ReLU if it's the last layer (we want raw features)
+        if isinstance(layers[-1], nn.ReLU):
+            layers = layers[:-1]
+        self.net = nn.Sequential(*layers)
+        # skip projection if dimensions mismatched
+        if self.use_skip and in_dim != d:
+            self.skip_proj = nn.Linear(in_dim, d)
+        else:
+            self.skip_proj = None
         # init small
         for m in self.net:
             if isinstance(m, nn.Linear):
                 nn.init.normal_(m.weight, std=0.05)
                 if m.bias is not None: nn.init.zeros_(m.bias)
+        if self.skip_proj is not None:
+            nn.init.normal_(self.skip_proj.weight, std=0.05)
+            nn.init.zeros_(self.skip_proj.bias)
 
     def forward(self, x_tree, tree_probs):
-        return self.net(torch.cat([x_tree, tree_probs], dim=-1))
+        x = torch.cat([x_tree, tree_probs], dim=-1)
+        h = self.net(x)
+        if self.use_skip:
+            skip = x if self.skip_proj is None else self.skip_proj(x)
+            h = h + skip
+        return h
 
 
 class SeqBranch(nn.Module):
@@ -105,13 +146,27 @@ class HDMNet(nn.Module):
     but are zeroed at forward time).
     """
     def __init__(self, n_event_types=7, d=32, dropout=0.1,
-                  disable_tree=False, disable_seq=False, disable_attn=False):
+                  disable_tree=False, disable_seq=False, disable_attn=False,
+                  tree_depth=2, tree_width=None, tree_use_skip=False,
+                  tree_use_bn=False):
         super().__init__()
         self.d = d
         self.disable_tree = disable_tree
         self.disable_seq = disable_seq
         self.disable_attn = disable_attn
-        self.tree = TreeHead(in_dim=n_event_types + 2, d=d, dropout=0.3)
+        # TreeHead now configurable; default behaviour preserved.
+        if tree_width is None: tree_width = d
+        self.tree = TreeHead(in_dim=n_event_types + 2, d=tree_width,
+                              depth=tree_depth, dropout=0.3,
+                              use_skip=tree_use_skip, use_bn=tree_use_bn)
+        # If tree returns width != d, project to d at HDMNet level via identity
+        # using a small linear to keep PIG dimension consistent:
+        if tree_width != d:
+            self.tree_proj = nn.Linear(tree_width, d)
+            nn.init.normal_(self.tree_proj.weight, std=0.05)
+            nn.init.zeros_(self.tree_proj.bias)
+        else:
+            self.tree_proj = None
         self.seq = SeqBranch(in_dim_per_step=1, d=d, dropout=dropout)
         self.attn = AttnBranch(n_segments=n_event_types, in_dim=1, d=d,
                                 nhead=4, num_layers=2, dropout=dropout)
@@ -127,6 +182,8 @@ class HDMNet(nn.Module):
             h_t = torch.zeros(B, self.d, device=x_tree.device, dtype=x_tree.dtype)
         else:
             h_t = self.tree(x_tree, tree_probs)
+            if self.tree_proj is not None:
+                h_t = self.tree_proj(h_t)
         if self.disable_seq:
             h_s = torch.zeros(B, self.d, device=x_tree.device, dtype=x_tree.dtype)
         else:

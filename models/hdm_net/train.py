@@ -156,7 +156,8 @@ def train_one_fold(model, optimizer, scheduler, bce, device,
 
 
 def main(output_dir=None, folds=5, epochs=80, batch_size=32, patience=10, seed=42,
-          disable_tree=False, disable_seq=False, disable_attn=False):
+          disable_tree=False, disable_seq=False, disable_attn=False,
+          tree_depth=2, tree_width=None, tree_use_skip=False, tree_use_bn=False):
     if output_dir is None:
         output_dir = os.path.join(_PROJECT_ROOT, 'outputs', 'unified_compare', 'hdm_net')
     os.makedirs(output_dir, exist_ok=True)
@@ -215,7 +216,10 @@ def main(output_dir=None, folds=5, epochs=80, batch_size=32, patience=10, seed=4
         # 初始化 model
         torch.manual_seed(seed + fi); np.random.seed(seed + fi)
         model = HDMNet(disable_tree=disable_tree, disable_seq=disable_seq,
-                        disable_attn=disable_attn).to(device)
+                        disable_attn=disable_attn,
+                        tree_depth=tree_depth, tree_width=tree_width,
+                        tree_use_skip=tree_use_skip,
+                        tree_use_bn=tree_use_bn).to(device)
         optimizer = torch.optim.AdamW(model.parameters(), lr=1e-3,
                                         weight_decay=1e-2)
         scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=epochs)
@@ -296,6 +300,11 @@ if __name__ == '__main__':
     p.add_argument('--variant', type=str, default='full',
                    choices=['full', 'no_tree', 'no_seq', 'no_attn'],
                    help='Ablation variant shorthand')
+    # TreeHead capacity sweep
+    p.add_argument('--tree-depth', type=int, default=2, help='Number of MLP layers in TreeHead')
+    p.add_argument('--tree-width', type=int, default=32, help='Hidden dim of TreeHead (matches d by default)')
+    p.add_argument('--tree-skip', action='store_true', help='Use residual/skip connection in TreeHead')
+    p.add_argument('--tree-bn', action='store_true', help='Use LayerNorm in TreeHead')
     args = p.parse_args()
     # Override via --variant if set
     if args.variant == 'no_tree':  args.disable_tree = True
@@ -304,4 +313,6 @@ if __name__ == '__main__':
     main(output_dir=args.output_dir, folds=args.folds, epochs=args.epochs,
          batch_size=args.batch_size, patience=args.patience, seed=args.seed,
          disable_tree=args.disable_tree, disable_seq=args.disable_seq,
-         disable_attn=args.disable_attn)
+         disable_attn=args.disable_attn,
+         tree_depth=args.tree_depth, tree_width=args.tree_width,
+         tree_use_skip=args.tree_skip, tree_use_bn=args.tree_bn)
