@@ -383,6 +383,48 @@ python compare_all_unified.py
 
 **完整 analysis 见** [`docs/INTERPRETABILITY_ANALYSIS.md`](docs/INTERPRETABILITY_ANALYSIS.md)
 
+### RF-LSTM 架构融合进化史（v1 → v2 → v3）
+
+**设计动机**：根据实验数据，**LSTM_46d Precision=0.900 几乎不输 RF_7dim Precision=0.907**（差 0.007），但 Recall 差 +0.041 → RF 覆盖更广。两模型 correlation=0.844 是真正提供 diversity 的两人组。架构级融合有望突破 post-hoc stacking 的天花板。
+
+| 版本 | 主要改动 | Params | F1 | AUC | 备注 |
+|------|---------|--------|------|------|------|
+| **v1 (RF-LSTM)** | RF probs broadcast 到每个 LSTM step | ~40K | 0.8766 | 0.9219 | 基线 |
+| v2 (RF-LSTM-Attn) | + hidden=64, 2-layer BiLSTM, cross-view attention | 222K | 0.7980 (FAILED) | 0.4521 | **退化到 "全预测 failed"** (R=1.0)，参数过拟合 |
+| **v3 (RF-LSTM-Attn)** | hidden=32, 1-layer BiLSTM, **self-attention + residual** | 28.9K | **0.8809 ± 0.016** | **0.9253 ± 0.017** | ✅ 解决过拟合问题，F1 +0.004 vs v1 |
+
+**v3 架构**：
+
+```
+7-dim events ─┐
+              ├──> BiLSTM(hidden=32, 1-layer) over 4×(11+2=13) segments
+46-dim feats ─┘              ↓
+                  h_seq: (B, 4, 64)
+RF probs (frozen) ──────────>┘     │
+                                  self-attention (residual)
+                                  ↓
+                              pooled: (B, 64)
+                                  ↓
+                  concat(pooled, RF probs) → Linear → sigmoid
+```
+
+**v3 vs 现有最佳对比**：
+
+| 模型 | F1 | AUC | Precision | Recall | Params |
+|------|------|------|-----------|--------|--------|
+| RF_7dim (baseline) | 0.8878 | 0.9167 | 0.9070 | **0.8694** | ~12K |
+| LSTM_46d (baseline) | 0.8624 | 0.9083 | 0.8997 | 0.8280 | ~50K |
+| **RF-LSTM v3 (架构融合)** | 0.8809 | **0.9253** | **0.9156** | 0.8503 | 28.9K |
+| Weighted 1/3/1 (post-hoc) | **0.9009** | 0.9349 | 0.9351 | 0.8694 | 0 |
+
+**关键发现**：
+1. v3 的 **Precision 0.9156 是三者最高**（RF: 0.9070, LSTM: 0.8997）——架构级 RF 信号注入确实"教"了 LSTM 怎么更谨慎
+2. v3 的 **AUC 0.9253 高于 RF_7dim**——时序建模 + RF 联合提升概率排序质量
+3. 但 v3 **F1 仍低于 RF_7dim**（−0.007）——在小数据上端到端学习没法超过最强的单 inductive bias 模型
+4. v3 **远低于 Weighted 1/3/1**（−0.020）——post-hoc 加权在小样本上仍是 SOTA
+
+**结论**：架构级融合（v3）vs post-hoc 加权（Weighted 1/3/1）——**在小数据 n=473 上，post-hoc 更稳定**。架构级融合在大数据上可能反超，但需要验证。
+
 > ⚠ **小样本说明**：n=473 是偏小样本，**F1 在 ±0.02 标准差波动下应谨慎解读**；所有"X 显著优于 Y"的强声明建议在大数据（n ≥ 2,000）上重新验证。
 
 **完整消融表 + Late Fusion 权重搜索结果 + 可视化产物清单**：参见 [`docs/EXPERIMENT_RESULTS.md`](docs/EXPERIMENT_RESULTS.md)。
