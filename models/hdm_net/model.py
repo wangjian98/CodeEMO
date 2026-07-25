@@ -98,8 +98,19 @@ class PIG(nn.Module):
 
 
 class HDMNet(nn.Module):
-    def __init__(self, n_event_types=7, d=32, dropout=0.1):
+    """HDM-Net with optional ablation: disable any of (tree, seq, attn) branch.
+    Disabled branch outputs zeros of shape (B, d) so PIG still receives 3 inputs
+    but learns to weight the remaining views more. Total params shrinks accordingly
+    when measured without head/PIG (since the branch layers still exist in memory
+    but are zeroed at forward time).
+    """
+    def __init__(self, n_event_types=7, d=32, dropout=0.1,
+                  disable_tree=False, disable_seq=False, disable_attn=False):
         super().__init__()
+        self.d = d
+        self.disable_tree = disable_tree
+        self.disable_seq = disable_seq
+        self.disable_attn = disable_attn
         self.tree = TreeHead(in_dim=n_event_types + 2, d=d, dropout=0.3)
         self.seq = SeqBranch(in_dim_per_step=1, d=d, dropout=dropout)
         self.attn = AttnBranch(n_segments=n_event_types, in_dim=1, d=d,
@@ -111,9 +122,19 @@ class HDMNet(nn.Module):
         nn.init.zeros_(self.head.bias)
 
     def forward(self, x_tree, tree_probs, x_seq, x_att):
-        h_t = self.tree(x_tree, tree_probs)
-        h_s = self.seq(x_seq)
-        h_a = self.attn(x_att)
+        B = x_tree.size(0)
+        if self.disable_tree:
+            h_t = torch.zeros(B, self.d, device=x_tree.device, dtype=x_tree.dtype)
+        else:
+            h_t = self.tree(x_tree, tree_probs)
+        if self.disable_seq:
+            h_s = torch.zeros(B, self.d, device=x_tree.device, dtype=x_tree.dtype)
+        else:
+            h_s = self.seq(x_seq)
+        if self.disable_attn:
+            h_a = torch.zeros(B, self.d, device=x_tree.device, dtype=x_tree.dtype)
+        else:
+            h_a = self.attn(x_att)
         h_final = self.pig(h_t, h_s, h_a)
         return self.head(h_final).squeeze(-1)
 

@@ -33,7 +33,10 @@ COMBOS = [
     ('RF',           '46d',  'rf_46d'),
     ('Transformer',  '7dim', 'transformer_7dim'),
     ('Transformer',  '46d',  'transformer_46d'),
-    ('HDM-Net', '—', 'hdm_net'),
+    ('HDM-Net (full)',   '—', 'hdm_net_full'),
+    ('HDM-Net (no_tree)','—', 'hdm_net_no_tree'),
+    ('HDM-Net (no_seq)', '—', 'hdm_net_no_seq'),
+    ('HDM-Net (no_attn)','—', 'hdm_net_no_attn'),
 ]
 
 
@@ -324,7 +327,8 @@ def main():
           "| 模型 | 特征 | Accuracy | Precision | Recall | F1 | AUC |",
           "|---|---|---|---|---|---|---|"]
     for n, s in results.items():
-        model, feat = n.split('_')
+        parts = n.rsplit('_', 1)
+        model, feat = parts[0], parts[1] if len(parts) > 1 else '—'
         md.append(f"| {model} | {feat} | "
                   f"{s['accuracy_mean']:.4f}±{s['accuracy_std']:.3f} | "
                   f"{s['precision_mean']:.4f}±{s['precision_std']:.3f} | "
@@ -356,3 +360,4 @@ def main():
 
 if __name__ == '__main__':
     main()
+# (already added hdm_net earlier; now add 3 ablation variants)

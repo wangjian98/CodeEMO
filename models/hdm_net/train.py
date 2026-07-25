@@ -155,7 +155,8 @@ def train_one_fold(model, optimizer, scheduler, bce, device,
     return v_probs, best_vloss
 
 
-def main(output_dir=None, folds=5, epochs=80, batch_size=32, patience=10, seed=42):
+def main(output_dir=None, folds=5, epochs=80, batch_size=32, patience=10, seed=42,
+          disable_tree=False, disable_seq=False, disable_attn=False):
     if output_dir is None:
         output_dir = os.path.join(_PROJECT_ROOT, 'outputs', 'unified_compare', 'hdm_net')
     os.makedirs(output_dir, exist_ok=True)
@@ -213,7 +214,8 @@ def main(output_dir=None, folds=5, epochs=80, batch_size=32, patience=10, seed=4
 
         # 初始化 model
         torch.manual_seed(seed + fi); np.random.seed(seed + fi)
-        model = HDMNet().to(device)
+        model = HDMNet(disable_tree=disable_tree, disable_seq=disable_seq,
+                        disable_attn=disable_attn).to(device)
         optimizer = torch.optim.AdamW(model.parameters(), lr=1e-3,
                                         weight_decay=1e-2)
         scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=epochs)
@@ -288,6 +290,18 @@ if __name__ == '__main__':
     p.add_argument('--patience', type=int, default=10)
     p.add_argument('--output-dir', type=str, default=None)
     p.add_argument('--seed', type=int, default=42)
+    p.add_argument('--disable-tree',  action='store_true', help='Zero out Tree branch output')
+    p.add_argument('--disable-seq',   action='store_true', help='Zero out Seq branch output')
+    p.add_argument('--disable-attn',  action='store_true', help='Zero out Attn branch output')
+    p.add_argument('--variant', type=str, default='full',
+                   choices=['full', 'no_tree', 'no_seq', 'no_attn'],
+                   help='Ablation variant shorthand')
     args = p.parse_args()
+    # Override via --variant if set
+    if args.variant == 'no_tree':  args.disable_tree = True
+    if args.variant == 'no_seq':   args.disable_seq  = True
+    if args.variant == 'no_attn':  args.disable_attn = True
     main(output_dir=args.output_dir, folds=args.folds, epochs=args.epochs,
-         batch_size=args.batch_size, patience=args.patience, seed=args.seed)
+         batch_size=args.batch_size, patience=args.patience, seed=args.seed,
+         disable_tree=args.disable_tree, disable_seq=args.disable_seq,
+         disable_attn=args.disable_attn)
