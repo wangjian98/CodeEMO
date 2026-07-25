@@ -51,6 +51,12 @@ CodeEMO/
 │       │   ├── step5_finetune.py
 │       │   └── step6_interpret.py
 │       └── results.json
+│   ├── bgm_net/                 # BGM-Net（行为门控双分支网络）
+│   │   ├── model.py             # dual-branch + 3 可选模块
+│   │   └── train.py             # 支持 5 变体消融 (--all-variants)
+│   └── cream/                   # CREAM（对比学习 + 自注意力）
+│       ├── model.py
+│       └── train.py             # 支持 5 变体消融
 │
 ├── outputs/                     # 实验输出
 │   ├── rf/
@@ -59,7 +65,14 @@ CodeEMO/
 │   ├── transformer/
 │   ├── mamba/
 │   ├── comparison.csv           # 全模型对比
+│   ├── unified_compare/         # 统一对比（46d vs 7d，failed=1 口径）
+│   ├── late_fusion_5way_v1/     # 5路 Late Fusion
 │   └── analysis.md              # 分析报告
+│
+├── docs/                        # 论文与文档
+│   ├── paper_draft.md           # 主论文草稿
+│   ├── cover_letter.md          # 投稿信
+│   └── EXPERIMENT_RESULTS.md    # 详细实验结果汇总（消融数据）
 │
 └── scripts/                     # 工具脚本
     └── visualize.py             # 统一可视化
@@ -114,6 +127,19 @@ python models/mamba/train_gpu.py
 python scripts/visualize.py
 ```
 
+### 跑消融实验
+
+```bash
+# BGM-Net 5 变体消融（baseline / no_gate / no_entropy / no_cross / full）
+python models/bgm_net/train.py --all-variants
+
+# CREAM 5 变体消融（baseline / no_bottleneck / no_se / no_contrastive / full）
+python models/cream/train.py
+
+# Late Fusion 5 路
+python late_fusion_5way.py
+```
+
 ## 模型简介
 
 | 模型 | 类型 | 描述 |
@@ -123,6 +149,8 @@ python scripts/visualize.py
 | [BiLSTM](models/bilstm/README.md) | 深度学习 | 双向LSTM (原论文方法), 46维特征 |
 | [Transformer](models/transformer/README.md) | 深度学习 | Transformer编码器, 46维特征分组为伪序列 |
 | [Mamba](models/mamba/README.md) | 前沿 | Selective State Space Model, 7维事件序列, 6步流程 |
+| [BGM-Net](models/bgm_net/) | 参数高效 | 双分支 MLP（~5K 参数）解耦统计与比率特征，附 3 个可选模块的消融 |
+| [CREAM](models/cream/) | 对比学习 | 对比学习头 + Squeeze-Excitation，附 5 变体消融 |
 
 ## 特征工程 (46维)
 
@@ -148,17 +176,79 @@ python scripts/visualize.py
 
 ## 结果汇总
 
-运行 `python main.py --model all` 后，结果保存至 `outputs/comparison.csv` 和 `outputs/analysis.md`。
+本仓库已包含完整 5 折分层 CV 实测数据。**主对比**数据源为 `outputs/unified_compare/unified_compare.csv`（口径：y=1=failed），汇总如下：
 
-| 模型 | Accuracy | F1 | AUC |
-|------|----------|----|-----|
-| RF | ~0.81 | ~0.73 | ~0.91 |
-| LSTM | ~0.80 | ~0.72 | ~0.89 |
-| BiLSTM | ~0.82 | ~0.75 | ~0.91 |
-| Transformer | ~0.81 | ~0.74 | ~0.90 |
-| Mamba (CPU) | ~0.83 | ~0.77 | ~0.92 |
+### 5 主流模型 × 特征维度
 
-> 以上为预期结果范围，实际结果取决于数据和环境。
+| 模型 | 特征维度 | Accuracy | F1 | AUC |
+|------|---------|----------|----|-----|
+| **LSTM** | **46d** | 0.8246 ± 0.034 | **0.8622 ± 0.028** | **0.9170 ± 0.023** |
+| BiLSTM | 46d | 0.8225 ± 0.023 | 0.8561 ± 0.024 | 0.9036 ± 0.014 |
+| Mamba  | 46d | 0.7972 ± 0.042 | 0.8455 ± 0.033 | 0.8557 ± 0.048 |
+| BiLSTM | 7dim | 0.7295 ± 0.041 | 0.8153 ± 0.020 | 0.7398 ± 0.053 |
+| LSTM   | 7dim | 0.7189 ± 0.037 | 0.8062 ± 0.020 | 0.7259 ± 0.052 |
+| Mamba  | 7dim | 0.6109 ± 0.043 | 0.6768 ± 0.044 | 0.6150 ± 0.063 |
+
+> **关键结论**：46 维特征全面优于 7 维原始计数，**LSTM-46d 是单模型最强**（F1/AUC 双榜首）。
+
+### BGM-Net 架构消融（5 变体，参数量 ~5K）
+
+| 变体 | F1@0.5 | AUC | 说明 |
+|------|--------|-----|------|
+| **baseline** | **0.7458 ± 0.026** | **0.9079 ± 0.019** | 仅双分支 MLP（dual-branch decoupling） |
+| no_cross      | 0.7381 ± 0.023 | 0.9061 ± 0.020 | −Ratio Cross |
+| no_gate       | 0.7290 ± 0.056 | 0.9012 ± 0.032 | −Behavior Gate |
+| full          | 0.7226 ± 0.047 | 0.9003 ± 0.030 | 启用全部 3 模块 |
+| no_entropy    | 0.7229 ± 0.043 | 0.8905 ± 0.030 | −Entropy Attention |
+
+> 结论：**双分支解耦本身是 BGM-Net 的全部价值**；三个可选模块（gate / entropy-attn / cross）在 n=473 上未带来正向收益（详见 `docs/EXPERIMENT_RESULTS.md` §2）。
+
+### CREAM 架构消融（5 变体）
+
+| 变体 | F1@0.5 | AUC |
+|------|--------|-----|
+| no_contrastive    | **0.7685 ± 0.021** | 0.8982 ± 0.018 |
+| no_bottleneck     | 0.7591 ± 0.026 | 0.9052 ± 0.018 |
+| no_se             | 0.7559 ± 0.027 | **0.9085 ± 0.014** |
+| baseline          | 0.7553 ± 0.020 | 0.9040 ± 0.016 |
+| full              | 0.7539 ± 0.030 | 0.9073 ± 0.021 |
+
+### Late Fusion 5 路集成
+
+| 指标 | 数值 | 对比单模型最佳 |
+|------|------|---------------|
+| **F1** | **0.9056 ± 0.015** | +0.043（vs LSTM-46d 0.8622） |
+| **AUC** | 0.9222 ± 0.011 | +0.005 |
+
+权重组合示例: `(a=0.5, b=0.3, c=0.1, d=0.1, e=0.0)` 为 Top-1 配置。论文草稿中 7 路融合达 F1=0.9013 亦与此口径吻合。
+
+> ⚠ **小样本说明**：n=473 是偏小样本，**F1 在 ±0.02 标准差波动下应谨慎解读**；所有"X 显著优于 Y"的强声明建议在大数据（n ≥ 2,000）上重新验证。
+
+**完整消融表 + Late Fusion 权重搜索结果 + 可视化产物清单**：参见 [`docs/EXPERIMENT_RESULTS.md`](docs/EXPERIMENT_RESULTS.md)。
+
+### 复现所有数字
+
+```bash
+# 主流模型（写覆 outputs/comparison.csv 和 outputs/unified_compare/）
+python main.py --model all
+python compare_all_unified.py
+
+# BGM-Net 五变体
+python models/bgm_net/train.py --all-variants
+
+# CREAM 五变体
+python models/cream/train.py
+
+# Late Fusion 5 路
+python late_fusion_5way.py
+```
+
+**单数字验证**（例：LSTM-46d 的 F1）：
+
+```bash
+grep '^LSTM_46d' outputs/unified_compare/unified_compare.csv
+# → LSTM_46d,0.8246136618141098,...,0.9170170890937019,...,0.8621745342484942,...
+```
 
 ## 依赖
 
