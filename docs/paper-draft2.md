@@ -176,7 +176,7 @@ All experiments are implemented in Python 3.11 with PyTorch 2.x for neural netwo
 
 We compare MRE against five categories of baselines:
 
-1. **Single-model baselines:** RF on 7-dim, LSTM on 46-dim (gated MLP, seq_len = 1), LSTM on 7-dim (event-sequence model, max_seq_len = 500, truncated), RF on 46-dim.
+1. **Single-model baselines:** RF on 7-dim, LSTM-MLP on 46-dim (gated MLP, seq_len = 1), LSTM-Seq on 7-dim (event-sequence model, max_seq_len = 500, truncated), RF on 46-dim.
 2. **Linear fusion:** 50/50 averaging, grid-searched optimal weight.
 3. **Project ensemble baselines:** Weighted 1/3/1 (RF×1 + HDM-Net v2×3 + LSTM×1), Stack LR top-3, HDM-Net v2 single model.
 4. **Architecture-level fusion:** RF-LSTM v3 (prior attempt at feature-level fusion in the project).
@@ -205,7 +205,7 @@ Table 1 reports single-model performance on the CS1 dataset under 5-fold stratif
 | Model | Accuracy | Precision | Recall | F1 | AUC |
 |---|---|---|---|---|---|
 | RF (7-dim) | 0.8541 ± 0.025 | 0.9082 ± 0.031 | 0.8694 ± 0.033 | 0.8876 ± 0.019 | 0.9175 ± 0.012 |
-| LSTM (46-dim) | 0.8289 ± 0.031 | 0.8981 ± 0.017 | 0.8377 ± 0.051 | 0.8659 ± 0.028 | 0.9068 ± 0.020 |
+| LSTM-MLP (46-dim) | 0.8289 ± 0.031 | 0.8981 ± 0.017 | 0.8377 ± 0.051 | 0.8659 ± 0.028 | 0.9068 ± 0.020 |
 
 RF achieves higher accuracy and F1, while LSTM has comparable precision. The two models exhibit correlation = 0.844 on OOF predictions, indicating genuine diversity that motivates fusion.
 
@@ -218,7 +218,7 @@ Table 2 compares MRE variants against project baselines.
 | Model | Accuracy | Precision | Recall | F1 | AUC |
 |---|---|---|---|---|---|
 | RF (7-dim) | 0.8541 | 0.9082 | 0.8694 | 0.8876 | 0.9175 |
-| LSTM (46-dim) | 0.8289 | 0.8981 | 0.8377 | 0.8659 | 0.9068 |
+| LSTM-MLP (46-dim) | 0.8289 | 0.8981 | 0.8377 | 0.8659 | 0.9068 |
 | Avg (50/50) | 0.8478 | 0.9217 | 0.8440 | 0.8800 | 0.9273 |
 | Grid-best (w_rf=0.7) | 0.8669 | 0.9355 | 0.8599 | 0.8953 | 0.9252 |
 | **MRE-soft (ours)** | 0.8626 | 0.9261 | 0.8631 | 0.8928 | **0.9330** |
@@ -250,7 +250,7 @@ Table 3 reports false positive (FP) and false negative (FN) counts per model.
 | Model | FP (passed → failed) | FN (failed → passed) | Total errors |
 |---|---|---|---|
 | RF (7-dim) | 28 | 41 | 69 |
-| LSTM (46-dim) | 30 | 51 | 81 |
+| LSTM-MLP (46-dim) | 30 | 51 | 81 |
 | MRE-soft | 22 | 43 | 65 |
 | MRE-confidence | 24 | 45 | 69 |
 | **MRE-hard** | **25** | **39** | **64** |
@@ -353,7 +353,7 @@ The four personas (Section 6.3) answer RQ3 by demonstrating **actionable student
 
 **L4 — SHAP background sampling.** KernelExplainer uses 50 background samples per fold; larger backgrounds may improve SHAP accuracy at higher computational cost.
 
-**L5 — Mechanism asymmetry between LSTM-46d and LSTM-7d.** Our LSTM-46d expert is implemented as a single-step gated MLP (seq_len = 1) on the 46-dim hand-crafted feature vector, while the LSTM-7d baseline (used in the broader CodeEMO project [21]) is a true event-sequence model (max_seq_len = 500, truncated). The two LSTMs are therefore **not directly comparable**: one exploits non-linear feature interactions via gating, the other exploits temporal recurrence over event sequences. Despite this asymmetry, both are reported as 'LSTM' baselines in our experimental tables to maintain terminological consistency with the project repository. Future work should explicitly distinguish the two regimes.
+**L5 — Mechanism asymmetry between LSTM-MLP-46d and LSTM-Seq-7d.** Our LSTM-MLP-46d expert is implemented as a single-step gated MLP (seq_len = 1) on the 46-dim hand-crafted feature vector, while the LSTM-Seq-7d baseline (used in the broader CodeEMO project [21]) is a true event-sequence model (max_seq_len = 500, truncated). The two LSTMs are therefore **not directly comparable**: one exploits non-linear feature interactions via gating, the other exploits temporal recurrence over event sequences. Despite this asymmetry, both are reported as 'LSTM' baselines in our experimental tables to maintain terminological consistency with the project repository. Future work should explicitly distinguish the two regimes.
 
 **L6 — Small-sample regime.** All conclusions are conditioned on n = 473 (a small-sample educational dataset). The 46-dim hand-crafted statistics + gated LSTM combination that wins here may not generalize to large-scale educational datasets (n > 10,000), where temporal sequence models may recover their advantage. Replication on larger cohorts is necessary before generalizing these findings to other educational contexts.
 

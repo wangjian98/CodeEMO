@@ -213,20 +213,20 @@ python compare_all_unified.py
 | **RF** | **7dim** | 0.8541 ± 0.025 | 0.8876 ± 0.019 | 0.9175 ± 0.012 |
 | Transformer | 7dim | 0.8352 ± 0.041 | 0.8689 ± 0.034 | 0.9162 ± 0.027 |
 | RF | 46d | 0.8247 ± 0.034 | 0.8654 ± 0.030 | 0.9069 ± 0.029 |
-| LSTM | 46d | 0.8246 ± 0.034 | 0.8622 ± 0.028 | 0.9170 ± 0.023 |
+| LSTM-MLP | 46d | 0.8246 ± 0.034 | 0.8622 ± 0.028 | 0.9170 ± 0.023 |
 | Transformer | 46d | 0.8183 ± 0.032 | 0.8567 ± 0.031 | 0.9034 ± 0.009 |
-| BiLSTM | 46d | 0.8225 ± 0.023 | 0.8561 ± 0.024 | 0.9036 ± 0.014 |
+| BiLSTM-MLP | 46d | 0.8225 ± 0.023 | 0.8561 ± 0.024 | 0.9036 ± 0.014 |
 | Mamba  | 46d | 0.7972 ± 0.042 | 0.8455 ± 0.033 | 0.8557 ± 0.048 |
-| BiLSTM | 7dim | 0.7295 ± 0.041 | 0.8153 ± 0.020 | 0.7398 ± 0.053 |
-| LSTM   | 7dim | 0.7189 ± 0.037 | 0.8062 ± 0.020 | 0.7259 ± 0.052 |
+| BiLSTM-Seq | 7dim | 0.7295 ± 0.041 | 0.8153 ± 0.020 | 0.7398 ± 0.053 |
+| LSTM-Seq | 7dim | 0.7189 ± 0.037 | 0.8062 ± 0.020 | 0.7259 ± 0.052 |
 | Mamba  | 7dim  | 0.6109 ± 0.043 | 0.6768 ± 0.044 | 0.6150 ± 0.063 |
 
 > **表注（重要 — 避免审稿误解）**：
-> - **LSTM/BiLSTM-46d 实现机制**：46-dim 特征向量先经过 `Linear(46→64)` 升维，再 reshape 为 **(B, 1, 64)** 即 **seq_len = 1**。因此 LSTM 在 46d 上**没有真正的时序建模**，等价于一个**带 gating 的 2 层 MLP**。
-> - **LSTM/BiLSTM-7dim 实现机制**：喂入真实 IDE 事件序列，**max_seq_len = 500**（截断），是真正的时序模型。
-> - **结论**：LSTM/BiLSTM-46d 的赢面来自「**46 维含变异系数 + 熵 + 行为轨迹 + 比率的小数据手工统计特征 + LSTM gating 做非线性交互**」，而非「**46 维时序结构**」。详见下方"信息密度差异"小节。
+> - **LSTM-MLP-46d / BiLSTM-MLP-46d 实现机制**：46-dim 特征向量先经过 `Linear(46→64)` 升维，再 reshape 为 **(B, 1, 64)** 即 **seq_len = 1**。因此 LSTM 在 46d 上**没有真正的时序建模**，等价于一个**带 gating 的 2 层 MLP**。
+> - **LSTM-Seq-7dim / BiLSTM-Seq-7dim 实现机制**：喂入真实 IDE 事件序列，**max_seq_len = 500**（截断），是真正的时序模型。
+> - **结论**：LSTM-MLP-46d / BiLSTM-MLP-46d 的赢面来自「**46 维含变异系数 + 熵 + 行为轨迹 + 比率的小数据手工统计特征 + LSTM gating 做非线性交互**」，而非「**46 维时序结构**」。详见下方"信息密度差异"小节。
 
-### 信息密度差异：为什么 LSTM-46d > LSTM-7dim？
+### 信息密度差异：为什么 LSTM-MLP-46d > LSTM-Seq-7dim？
 
 | 特征类型 | 7-dim (事件计数) | 46-dim (hand-crafted 统计) |
 |----------|------------------|--------------------------|
@@ -237,7 +237,7 @@ python compare_all_unified.py
 | **复合比率** (edit/delete/focus ratio 的均值与标准差) | ❌ 无 | ✅ 6 维 |
 | **元信息** (num_problems / total_events) | ❌ 无 | ✅ 2 维 |
 
-> **结论**：7 维特征把「一次性写 1000 字符」与「100 次每次 10 字符」映射到同一向量；46 维通过变异系数 + 熵 + 比率 + 轨迹把它们**完全区分开**。**LSTM-46d 的胜出来自「更丰富的小样本手工统计特征 + LSTM gating 做非线性」**，并非「时序结构」。
+> **结论**：7 维特征把「一次性写 1000 字符」与「100 次每次 10 字符」映射到同一向量；46 维通过变异系数 + 熵 + 比率 + 轨迹把它们**完全区分开**。**LSTM-MLP-46d 的胜出来自「更丰富的小样本手工统计特征 + LSTM gating 做非线性」**，并非「时序结构」。
 
 ### 新模型单模型对比（2026-07-26/27 新增）
 
@@ -260,9 +260,9 @@ python compare_all_unified.py
 
 > **关键发现**：
 > 1. **新榜首 Weighted 1/3/1 (F1=0.901 / AUC=0.935)** – 1×RF + 3×HDM-Net v2 + 1×LSTM 的加权集成，超越 Late Fusion 5-way 在 F1 (略低 0.005) 和 AUC (反超 0.013) 的表现。同时 Precision=0.935 是全部单模型里最高的。详情见下一节。
-> 2. **F1/AUC 次榜首** = RF-7dim (F1=0.888 / AUC=0.918)；LSTM-46d (AUC=0.917) 几乎并列。
+> 2. **F1/AUC 次榜首** = RF-7dim (F1=0.888 / AUC=0.918)；LSTM-MLP-46d (AUC=0.917) 几乎并列。
 > 3. **树/伪序列模型在 7-dim 简洁特征上反超 46-dim**：RF-7dim > RF-46d (ΔF1=+0.022)，Transformer-7dim > Transformer-46d (ΔF1=+0.012)。
-> 4. **序列模型恰好相反**：LSTM-46d > LSTM-7dim (ΔF1=+0.056)；BiLSTM-46d > BiLSTM-7dim (ΔF1=0.041)。
+> 4. **序列模型恰好相反**：LSTM-MLP-46d > LSTM-Seq-7dim (ΔF1=+0.056)；BiLSTM-MLP-46d > BiLSTM-Seq-7dim (ΔF1=0.041)。
 > 5. **隐含启示**：特征工程的"最优维度"取决于模型族——是论文 BGM-Net 双分支解耦设计的独立证据点（§3.7）。
 
 ### HDM-Net：异构解码器混合网络
@@ -557,7 +557,7 @@ RF probs (frozen) ──────────>┘     │
 
 ### PR-DE-Net: Precision-Recall Gated Dual-Encoder Network（融合 F1=0.903，单模型 F1=0.860）
 
-**架构动机**：LSTM/BiLSTM-46d Recall 高（0.80-0.83）但 Precision 仅 0.92；Transformer-7d Precision 高（0.918）但 Recall 0.82——两者学**互补判别特征**，应当端到端融合。
+**架构动机**：LSTM-MLP-46d / BiLSTM-MLP-46d Recall 高（0.80-0.83）但 Precision 仅 0.92；Transformer-7d Precision 高（0.918）但 Recall 0.82——两者学**互补判别特征**，应当端到端融合。
 
 **架构（双分支 + Gate MLP）**：
 
@@ -729,7 +729,7 @@ python models/cream/train.py
 python late_fusion_5way.py
 ```
 
-**单数字验证**（例：LSTM-46d 的 F1）：
+**单数字验证**（例：LSTM-MLP-46d 的 F1）：
 
 ```bash
 grep '^LSTM_46d' outputs/unified_compare/unified_compare.csv

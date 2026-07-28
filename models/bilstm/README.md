@@ -1,5 +1,22 @@
 # 双向LSTM模型 (Bidirectional LSTM)
 
+
+> ⚠️ **重要澄清（2026-07-28 更新）**：
+>
+> 本目录的 BiLSTM 在 46 维特征上的实现**实际不是时序模型**：
+>
+> ```
+> 输入 (batch, 46) → Linear(46→64) → unsqueeze(1) → (batch, 1, 64) → BiLSTM(layers=2, bidirectional=True)
+> ```
+>
+> - `unsqueeze(1)` 把 46 维向量 reshape 为 **(batch, 1, 64)** —— **seq_len = 1**
+> - BiLSTM 只看到 1 个时间步,**前向/后向记忆完全无法发挥**
+> - 实际等价于 **带 gating 的 2 层双向 MLP**
+>
+> 因此本模型在论文/外部文档中应标注为 **BiLSTM-MLP (46d)** 或 **BiLSTM-Gated-MLP (46d)**，
+> **不应称为"双向时序模型"**。请勿将其与真时序 BiLSTM（如 `models/bilstm_7dim_gpu.py` 的事件序列 BiLSTM，
+> `max_seq_len = 500`）混淆。详见 [`docs/paper-draft2.md §7.4 L5`](../../docs/paper-draft2.md)。
+
 ## 算法简介
 
 双向LSTM（Bidirectional Long Short-Term Memory）是一种序列建模方法，通过前向和后向两个方向的LSTM网络同时处理输入序列，从而捕捉双向的时序依赖关系。

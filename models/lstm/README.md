@@ -1,5 +1,22 @@
 # LSTM 单向模型
 
+
+> ⚠️ **重要澄清（2026-07-28 更新）**：
+>
+> 本目录的 LSTM 在 46 维特征上的实现**实际不是时序模型**：
+>
+> ```
+> 输入 (batch, 46) → Linear(46→64) → unsqueeze(1) → (batch, 1, 64) → LSTM(layers=2)
+> ```
+>
+> - `unsqueeze(1)` 把 46 维向量 reshape 为 **(batch, 1, 64)** —— **seq_len = 1**
+> - LSTM 只看到 1 个时间步,**记忆能力完全无法发挥**
+> - 实际等价于 **带 gating 的 2 层 MLP**(用 LSTM 的 forget/input/output gates 做非线性变换)
+>
+> 因此本模型在论文/外部文档中应标注为 **LSTM-MLP (46d)** 或 **LSTM-Gated-MLP (46d)**，
+> **不应称为"时序模型"**。请勿将其与真时序 LSTM（如 `models/lstm_7dim_gpu.py` 的事件序列 LSTM，
+> `max_seq_len = 500`）混淆。详见 [`docs/paper-draft2.md §7.4 L5`](../../docs/paper-draft2.md)。
+
 ## 算法描述
 
 本模块实现了单向LSTM（长短期记忆网络）分类器，用于**学生早期风险预测**任务。模型基于IDE编程日志提取的46维聚合特征，预测学生是否能通过课程。
