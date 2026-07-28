@@ -351,3 +351,106 @@ python3 models/pr_de_net/report.py
 ```
 
 详细 README 见 [`models/pr_de_net/README.md`](../../models/pr_de_net/README.md)。**注意：PR-DE-Net 当前为 untracked 状态（`models/pr_de_net/` 和 `docs/paper-draft2*.md` 还未 commit），需要先 `git add` 后再 commit。**
+
+
+---
+
+## 11. MRE: Multi-Route Expert Fusion + SHAP Interpretability（2026-07-28 新增，已 commit 1661fa4）
+
+**数据源**：`outputs/unified_compare/mre/{all_results.json, shap_interpretability_report.md, shap_results.json}`
+**配套论文草稿**：[`docs/paper-draft2.md`](paper-draft2.md) + [`docs/paper-draft2-cn.md`](paper-draft2-cn.md)
+
+### 11.1 架构
+
+- **Route A（RF Expert）**：7-dim 事件计数 + Random Forest (n_estimators=200, max_depth=12)
+- **Route B（LSTM Expert）**：46-dim hand-crafted features + 单层 LSTM (hidden=32)
+- **Gate MLP**：13-dim 输入（6 RF/LSTM 概率统计 + 7 事件计数）→ 32 → 16 → 2 → softmax → α_rf
+- **3 种融合模式**：
+  - **soft**：α_rf · p_rf + (1-α_rf) · p_lstm
+  - **hard**：直通估计器（STE）按 α_rf > 0.5 二选一
+  - **confidence**：选 max(p_rf, p_lstm) 对应的 expert
+
+### 11.2 完整结果表（5 折分层 CV，n=473）
+
+| 变体 | F1 | AUC | Precision | Recall | Accuracy | 备注 |
+|------|-----|-----|-----------|--------|----------|------|
+| RF expert (Route A) | 0.8891 ± 0.017 | 0.9175 ± 0.012 | 0.9111 | 0.8694 | 0.8563 | 7-dim RF |
+| LSTM expert (Route B) | 0.8659 ± 0.028 | 0.9068 ± 0.020 | 0.8981 | 0.8377 | 0.8289 | 46-dim LSTM |
+| avg_50_50（基线） | 0.8800 ± 0.015 | 0.9271 ± 0.014 | — | — | — | 等权平均 |
+| grid_best_w_rf（基线） | 0.8953 ± 0.017 | 0.9253 ± 0.013 | — | — | — | 网格搜索最优 |
+| MRE-soft | 0.8943 ± 0.015 | **0.9326 ± 0.012** | 0.9287 | 0.8631 | 0.8647 | Soft MoE |
+| MRE-confidence | 0.8889 ± 0.020 | 0.9236 ± 0.018 | 0.9251 | 0.8567 | 0.8584 | Confidence-based |
+| **★ MRE-hard** (best) | **0.8986 ± 0.019** | 0.9316 ± 0.008 | 0.9232 | 0.8758 | 0.8690 | Hard Routing + STE |
+
+> ⚠️ paper-draft2.md 写的是 F1=0.8958，实际 all_results.json 是 **0.8986**——以数据为准。
+
+### 11.3 SHAP 全局特征重要性（13 维 → 按 mean |SHAP| 排序）
+
+| 排序 | 特征 | mean \|SHAP\| | 类别 |
+|:---:|------|------:|------|
+| 1 | text_insert | 0.0905 | 7-dim 事件 |
+| 2 | run | 0.0825 | 7-dim 事件 |
+| 3 | submit | 0.0620 | 7-dim 事件 |
+| 4 | rf_prob | 0.0574 | 概率信号 |
+| 5 | lstm_prob | 0.0447 | 概率信号 |
+| 6-7 | text_remove / text_paste | 0.0385 / 0.0365 | 7-dim 事件 |
+| 8-9 | focus_lost / focus_gained | 0.0263 / 0.0227 | 7-dim 事件 |
+| 10-13 | max/min/|·|/rf·lstm | < 0.004 | 交互项 |
+
+**特征组贡献**：
+
+| 特征组 | SHAP 总和 | 占比 |
+|---|---:|---:|
+| **7-dim 事件计数** | **0.359** | **75.7%** |
+| RF/LSTM probs (2 维) | 0.102 | 21.5% |
+| 交互项 (4 维) | 0.013 | 2.8% |
+
+> **关键发现**：7 维事件计数贡献了 76% 的路由决策权重——是 RF/LSTM 概率信号的 3.5 倍。**门控主要靠"行为强度"而非"专家分歧"做决策**。SHAP 重构误差 = 0.0000（每折验证）。
+
+### 11.4 4 个学生画像（Mann-Whitney U=38463, p=0.0000）
+
+| 画像 | 行为特征 | 占比 | 路由倾向 |
+|------|----------|------|---------|
+| 低活动量未通过者 | 所有 7 事件 < 均值 6-29% | 66.4% (n=314) | **强 RF** (α_rf 高) |
+| 高活动量未通过者 | text_insert 1.67× 均值 | 18.2% (n=86) | 强 LSTM |
+| 主动自编码者 | 平衡行为 + 多次 run | 少量 | 平衡/略 RF |
+| 模板依赖通过者 | text_paste 占比高 | 少量 | RF |
+
+**α_rf 区间分布**（n=473）：
+
+| α_rf 区间 | 样本数 | 占比 | 路由倾向 |
+|---|---:|---:|---|
+| < 0.30 | 66 | 14.0% | 强 LSTM |
+| 0.30-0.45 | 20 | 4.2% | 略 LSTM |
+| 0.45-0.55 | 73 | 15.4% | 平衡 |
+| 0.55-0.70 | 141 | 29.8% | 略 RF |
+| > 0.70 | 173 | 36.6% | 强 RF |
+
+### 11.5 与现有最佳融合方案对比
+
+| 模型 | F1 | AUC | 备注 |
+|------|-----|-----|------|
+| Late Fusion 5-way | 0.9056 | 0.9222 | 5 个 base model |
+| **PR-DE-Net 3-way** | **0.9027** | 0.9265 | 3 个 base model (已加进 README) |
+| Weighted 1/3/1 | 0.9009 | 0.9349 | 3 个 base model 加权 |
+| **★ MRE-hard** (仅 2 base) | **0.8986** | 0.9316 | **"少而精"**——2 个 base + 可解释 Gate |
+
+> MRE-hard 仅用 2 个 base expert 即达到 F1=0.8986，与 Weighted 1/3/1 (F1=0.9009) 几乎持平；推理成本低一个数量级。
+
+### 11.6 运行复现
+
+```bash
+# 主实验（生成 outputs/unified_compare/mre/all_results.json）
+python3 models/mre/train.py
+
+# SHAP 解释性分析（生成 shap_results.json + 可视化）
+python3 models/mre/shap_analysis.py
+
+# SHAP 深度分析（含 4 学生画像）
+python3 models/mre/shap_deep_dive.py
+
+# 生成可读报告
+python3 models/mre/gen_shap_report.py
+```
+
+详细 SHAP 报告见 [`outputs/unified_compare/mre/shap_interpretability_report.md`](../../outputs/unified_compare/mre/shap_interpretability_report.md)，论文草稿见 [`docs/paper-draft2.md`](paper-draft2.md)。

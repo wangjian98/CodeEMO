@@ -177,6 +177,7 @@ python compare_all_unified.py
 | [OST-Forest](models/ost_forest/) | 自蒸馏树森林 | 20 RFs OOF + 33-d meta + LR head + soft label (α=0.4)；F3 单折 F1=0.928 |
 | [MASC-Net](models/masc_net/) | 多尺度对比学习 | 多尺度编码 + Sample-aware 对比 + 不确定性分支；4 变体消融（baseline_only 最佳）|
 | [PR-DE-Net](models/pr_de_net/) | 双分支精召路由 | BiLSTM(Recall)+Transformer(Precision) + Gate MLP + 三段式 Loss；3-way 融合 F1=0.9027 |
+| [MRE](models/mre/) | 多路由专家 + SHAP 解释 | Route A (RF 7-dim) + Route B (LSTM 46-dim) + Gating MLP；hard 路由 F1=0.899 AUC=0.932 + 4 学生画像 |
 
 ## 特征工程 (46维)
 
@@ -228,6 +229,11 @@ python compare_all_unified.py
 | **OST-Forest (F3 单折/最佳)** | 同上 + 阈值微调 | 0.9043 | 0.9355 | 0.9206 | **0.9280** | 0.9309 |
 | MASC-Net (baseline_only) | 7-dim + 多尺度编码 | 0.8458 ± 0.034 | 0.7145 ± 0.045 | 0.9058 ± 0.044 | **0.7985 ± 0.042** | **0.8995 ± 0.020** |
 | PR-DE-Net (full) | 46d + 7d 双分支 + Gate | — | 0.9092 | 0.8184 | **0.8601 ± 0.027** | 0.8711 |
+| MRE - RF expert (Route A) | 7-dim | 0.8563 | 0.9111 | 0.8694 | 0.8891 ± 0.017 | **0.9175 ± 0.012** |
+| MRE - LSTM expert (Route B) | 46-dim | 0.8289 | 0.8981 | 0.8377 | 0.8659 ± 0.028 | 0.9068 ± 0.020 |
+| **MRE-soft** | Gate (Soft MoE) | 0.8647 | 0.9287 | 0.8631 | 0.8943 ± 0.015 | **0.9326 ± 0.012** |
+| MRE-confidence | Gate (Confidence-based) | 0.8584 | 0.9251 | 0.8567 | 0.8889 ± 0.020 | 0.9236 ± 0.018 |
+| **MRE-hard** (best) | Gate (Hard Routing + STE) | **0.8690** | **0.9232** | **0.8758** | **0.8986 ± 0.019** | 0.9316 ± 0.008 |
 
 > **补充观察**：
 > 1. **OST-Forest 单模型（F3 折 0.9280）已超越 HDM-Net v2（T3 0.8982）+3.0 pts**，但 CV 均值 0.8816 仍低于 HDM-Net v2；说明 OST-Forest 的 refinement 阶段带来强单折性能，但泛化均值尚未稳定超越。
@@ -585,6 +591,103 @@ p_A (Recall)          p_B (Precision)
 3. **失败模式明确**——错把 failed 当 passed 的 57 个样本上 Gate 路由失败（gate=0.685 应低于 0.5），表明单模型架构无法突破，需要 RF/HDM 在融合中补足视角。
 
 **实现文件**：`models/pr_de_net/{model.py,train.py,fusion.py,ablation.py}`，完整 README 见 [`models/pr_de_net/README.md`](models/pr_de_net/README.md)，融合结果在 `outputs/pr_de_net/fusion_{3way,4way}.json`
+
+---
+
+### MRE: Multi-Route Expert Fusion + SHAP Interpretability（hard F1=0.899, AUC=0.932）
+
+**架构动机**：现有融合策略（静态权重 / stacking / HDM-Net 朴素 gating）都"对所有学生使用相同决策规则"——忽略了个体行为差异。MRE 用可解释的 gating MLP **按学生路由到最合适的专家**。
+
+**架构（双专家 + Gate MLP + 3 种融合模式）**：
+
+```
+                  ┌──────────────┐
+7-dim events ───>│ Route A (RF) │──> p_rf (n_estimators=200, max_depth=12)
+                  └──────────────┘
+                                    ↘
+                                     Gate MLP (6+7 → 32 → 16 → 2 → softmax)
+                                    ↗
+                  ┌──────────────┐
+46-dim feats ───>│ Route B (LSTM)│──> p_lstm (single-layer, hidden=32)
+                  └──────────────┘
+                                       ↓
+                  α_rf · p_rf + (1-α_rf) · p_lstm
+                          ↓
+                  ┌───────────┴───────────┐
+                  │ soft / hard(STE) / confidence │
+                  └───────────┬───────────┘
+                              ↓
+                          p_final
+```
+
+**3 种融合模式 + 2 baseline**：
+
+| 变体 | F1 | AUC | Precision | Recall | 备注 |
+|------|-----|-----|-----------|--------|------|
+| RF expert (Route A) | 0.8891 ± 0.017 | 0.9175 ± 0.012 | 0.9111 | 0.8694 | 7-dim RF |
+| LSTM expert (Route B) | 0.8659 ± 0.028 | 0.9068 ± 0.020 | 0.8981 | 0.8377 | 46-dim LSTM |
+| avg_50_50（基线） | 0.8800 ± 0.015 | 0.9271 ± 0.014 | — | — | 等权平均 |
+| grid_best_w_rf（基线） | 0.8953 ± 0.017 | 0.9253 ± 0.013 | — | — | 网格搜索最优 |
+| MRE-soft | 0.8943 ± 0.015 | **0.9326 ± 0.012** | 0.9287 | 0.8631 | Soft MoE |
+| MRE-confidence | 0.8889 ± 0.020 | 0.9236 ± 0.018 | 0.9251 | 0.8567 | Confidence-based |
+| **★ MRE-hard** (best) | **0.8986 ± 0.019** | 0.9316 ± 0.008 | 0.9232 | 0.8758 | Hard Routing + STE |
+
+> **MRE-hard 仅用 2 个 base expert 即达到 F1=0.8986**，与 Weighted 1/3/1 (F1=0.9009, 需 3 个 base model) 几乎持平；且 AUC=0.9316 比 Weighted 1/3/1 (0.9349) 略低 0.003。**这是"少而精"的融合方案**。
+>
+> ⚠️ paper-draft2.md 写的是 F1=0.8958，实际 all_results.json 数据是 **0.8986**——以数据为准。
+
+#### SHAP 路由可解释性
+
+**全局特征重要性（mean |SHAP|）**：
+
+| 排序 | 特征 | mean \|SHAP\| | 类别 |
+|:---:|------|------:|------|
+| 1 | text_insert | 0.0905 | 7-dim 事件计数 |
+| 2 | run | 0.0825 | 7-dim 事件计数 |
+| 3 | submit | 0.0620 | 7-dim 事件计数 |
+| 4 | rf_prob | 0.0574 | 概率信号 |
+| 5 | lstm_prob | 0.0447 | 概率信号 |
+| 6-7 | text_remove / text_paste | 0.038 / 0.037 | 7-dim 事件计数 |
+| 8-9 | focus_lost / focus_gained | 0.026 / 0.023 | 7-dim 事件计数 |
+
+**特征组贡献**：
+
+| 特征组 | SHAP 总和 | 占比 |
+|---|---:|---:|
+| **7-dim 事件计数** | **0.359** | **75.7%** |
+| RF/LSTM probs (2 维) | 0.102 | 21.5% |
+| 交互项 (4 维) | 0.013 | 2.8% |
+
+> **关键发现**：**7 维事件计数贡献了 76% 的路由决策权重**——是 RF/LSTM 概率信号的 **3.5 倍**。门控主要靠"行为强度"而非"专家分歧"做决策。这与"小样本上简单信号最稳"的小数据教育场景一致。
+
+#### 4 个学生画像（Mann-Whitney U 检验 p<1e-21）
+
+| 画像 | 特征 | 占比 | 路由倾向 |
+|------|------|------|---------|
+| 低活动量未通过者 | 所有 7 事件计数低于均值 6-29% | 66.4% (n=314) | **强 RF** (α_rf 高) |
+| 高活动量未通过者 | text_insert 1.67× 全局均值 | 18.2% (n=86) | 强 LSTM |
+| 主动自编码者 | 平衡行为 + 多次 run | — | 平衡/略 RF |
+| 模板依赖通过者 | text_paste 占比高 | — | RF（已稳定）|
+
+#### 路由规则（Mann-Whitney U=38463, p=0.0000）
+
+**α_rf 区间分布**（n=473）：
+
+| α_rf 区间 | 样本数 | 占比 | 路由倾向 |
+|---|---:|---:|---|
+| < 0.30 | 66 | 14.0% | 强 LSTM |
+| 0.30-0.45 | 20 | 4.2% | 略 LSTM |
+| 0.45-0.55 | 73 | 15.4% | 平衡 |
+| 0.55-0.70 | 141 | 29.8% | 略 RF |
+| > 0.70 | 173 | 36.6% | 强 RF |
+
+#### 关键贡献
+
+1. **仅 2 个 base expert 达到 F1=0.8986**——比 Late Fusion 5-way (F1=0.9056) 低 0.007，但参数 + 推理成本都低一个数量级。
+2. **SHAP 量化证明门控依赖简单行为信号**——7 维事件计数占 76% 权重，是论文可解释性部分的强支撑。
+3. **学生画像可直接用于教学干预**——4 类画像 + α_rf 区间分布提供了"哪些学生需要 RF 视角、哪些需要 LSTM 视角"的可操作规则。
+
+**实现文件**：`models/mre/{mre_model.py, train.py, analysis.py, shap_analysis.py, shap_deep_dive.py, gen_shap_report.py}`，完整论文草稿见 [`docs/paper-draft2.md`](docs/paper-draft2.md) 与 [`docs/paper-draft2-cn.md`](docs/paper-draft2-cn.md)，SHAP 详细报告见 [`outputs/unified_compare/mre/shap_interpretability_report.md`](outputs/unified_compare/mre/shap_interpretability_report.md)。
 
 
 > ⚠ **小样本说明**：n=473 是偏小样本，**F1 在 ±0.02 标准差波动下应谨慎解读**；所有"X 显著优于 Y"的强声明建议在大数据（n ≥ 2,000）上重新验证。
