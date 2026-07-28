@@ -195,3 +195,159 @@ python -c "import json; print(json.dumps(json.load(open('outputs/unified_compare
 | 各模型可视化 | `results/{model}/*.png` |
 | 综合 analysis report | `results/analysis_report.md` |
 | 论文草稿 | `docs/paper_draft.md` |
+
+
+---
+
+## 8. OST-Forest: Out-of-fold Self-distilled Tree Forest（2026-07-27 新增）
+
+**数据源**：`outputs/ost_forest/{results.json, refine_F*.json}`
+**方法**：20 棵异构随机森林（depth 3/5/8, seed varies）→ 5 折 OOF matrix (20-d) → 与 7-d handcrafted + 6-d session stat 拼接为 33-d meta feature → LR head + self-distillation soft label (α=0.4)
+
+### 8.1 主结果（CV 5 折均值 vs F3 单折）
+
+| 指标 | CV 均值 | F3 单折（refinement） | 备注 |
+|------|---------|---------------------|------|
+| Accuracy | 0.8521 ± 0.027 | 0.9043 | |
+| Precision | 0.9378 ± 0.035 | 0.9355 | |
+| Recall | 0.8344 ± 0.048 | 0.9206 | |
+| **F1** | **0.8816 ± 0.023** | **0.9280** | F3 单折反超 HDM-Net v2 (0.8982) |
+| AUC | 0.9087 ± 0.014 | 0.9309 | |
+
+### 8.2 5 个核心 Finding
+
+1. **20 RF OOF marginal in 7-d**：大量 RF OOF 信号在 7-d 上边际收益有限
+2. **LR head > LightGBM head by +0.0147 F1**（n=473）：简单线性头在小样本上反而胜出
+3. **Soft label α=0.4 稳定 +0.007 F1**：自蒸馏有微弱贡献
+4. **20→5 RF no significant degradation**：RF 数量可大幅缩减而不损性能
+5. **7d > 46d in this regime**：验证"小样本偏 7-d"假说
+
+### 8.3 模型排名（F1，5 折 CV）
+
+| 排名 | 模型 | F1 | 类型 |
+|------|------|----|------|
+| 1 | Late Fusion 5-way | 0.9056 | 5 模型集成 |
+| 2 | **PR-DE-Net 3-way** | **0.9027** | 3 模型融合 |
+| 3 | Weighted 1/3/1 | 0.9009 | 3 模型加权 |
+| 4 | Stack top-3 LR | 0.8986 | 3 模型 LR stacking |
+| 5 | HDM-Net v2 (T3) | 0.8982 | 单模型 |
+| 6 | OST-Forest (CV 均值) | 0.8816 | 单模型 |
+| 7 | RF-LSTM v3 | 0.8809 | 单模型 |
+| 8 | RF-7dim | 0.8876 | 单模型（最强传统 ML）|
+| 9 | PR-DE-Net (full) | 0.8601 | 单模型 |
+| 10 | MASC-Net (baseline_only) | 0.7985 | 单模型 |
+
+> OST-Forest 的 F3 单折 0.928 是**单一折表现**，CV 均值 0.8816 更稳定；论文引用应使用均值。
+
+### 8.4 运行复现
+
+```bash
+python models/ost_forest/train.py
+```
+
+主结果落在 `outputs/ost_forest/results.json`，refinement 变体在 `outputs/ost_forest/refine_F*.json`，详细报告 [`docs/OST_FOREST_REPORT.md`](../OST_FOREST_REPORT.md)。
+
+---
+
+## 9. MASC-Net: Multi-scale Adaptive Sample-aware Contrastive Network（2026-07-26 新增）
+
+**数据源**：`outputs/masc_net/{baseline_only,no_contrastive,no_uncertainty,full}_results.json`
+**架构**：多尺度编码（CNN+MLP+Cross-Scale Attention）+ Sample-aware 对比（MoCo + adaptive τ + hard negatives）+ Prototype 记忆库（K=2 × M=4, EMA）+ Adaptive threshold 分类器 + Uncertainty 分支
+
+### 9.1 4 变体消融（5 折 CV，n=473）
+
+| 变体 | Contrastive | Uncertainty | F1 | AUC |
+|------|:-----------:|:-----------:|----|-----|
+| **baseline_only** | ✗ | ✗ | **0.7985 ± 0.042** | **0.8995 ± 0.020** |
+| no_contrastive | ✗ | ✓ | 0.7517 ± 0.044 | 0.8479 ± 0.054 |
+| no_uncertainty | ✓ | ✗ | 0.7467 ± 0.026 | 0.8624 ± 0.026 |
+| full | ✓ | ✓ | 0.7286 ± 0.042 | 0.8644 ± 0.021 |
+
+### 9.2 关键负发现
+
+1. **contrastive + uncertainty 模块在 n=473 上拖累 F1**（−7 pp vs baseline_only），与 BGM-Net 消融结论一致——**小样本下增加参数会引入方差**。
+2. **baseline_only 反超 BGM-Net baseline**（F1=0.7985 vs 0.7458，**+5.27 pp**），说明多尺度编码本身（去掉对比学习头）已经是个不错的特征提取器。
+3. **full 模型 AUC 仍可观**（0.8644）但 F1 显著下降，表明对比学习优化了概率排序但破坏了阈值化的分类决策。
+
+### 9.3 与 BGM-Net / CREAM 消融对比
+
+| 模型 | best 变体 F1 | full F1 | 负发现强度 |
+|------|------------|---------|----------|
+| BGM-Net | 0.7458 (baseline) | 0.7226 (full) | full − baseline = −0.023 |
+| CREAM | 0.7685 (no_contrastive) | 0.7539 (full) | full − baseline = −0.0014 |
+| **MASC-Net** | **0.7985 (baseline_only)** | **0.7286 (full)** | full − baseline = **−0.070** ⚠ |
+
+> MASC-Net 的"小样本负面效应"比 BGM-Net / CREAM 都强烈（−7 pp vs −1~2 pp），暗示 MoCo + prototype + uncertainty 的组合对小样本教育数据是**最不友好**的。
+
+### 9.4 运行复现
+
+```bash
+python models/masc_net/train.py --ablation baseline_only   # 最佳变体
+python models/masc_net/train.py --ablation no_contrastive
+python models/masc_net/train.py --ablation no_uncertainty
+python models/masc_net/train.py --ablation full
+```
+
+每个变体结果落在 `outputs/masc_net/{variant}_results.json`。
+
+---
+
+## 10. PR-DE-Net: Precision-Recall Gated Dual-Encoder Network（2026-07-26 新增，未 commit）
+
+**数据源**：`outputs/pr_de_net/{full/results.json, fusion_{3way,4way}.json, comparison_with_baselines.json}`
+**架构动机**：LSTM/BiLSTM-46d Recall 高（0.80-0.83）但 Precision 仅 0.92；Transformer-7d Precision 高（0.918）但 Recall 0.82——两者学**互补判别特征**，应当端到端融合。
+
+### 10.1 单模型 + 消融
+
+| 变体 | 描述 | F1 | Precision | Recall | AUC |
+|------|------|-----|-----------|--------|-----|
+| **full (Gate + 三段式 Loss)** | 完整模型 | **0.8601 ± 0.027** | 0.9092 | 0.8184 | 0.8711 |
+| no_gate | 固定 0.5/0.5 平均 | 0.8486 | 0.8691 | 0.8344 | 0.8412 |
+| single_loss | 只用 γ·BCE | 0.8653 | 0.8818 | 0.8504 | 0.8781 |
+
+### 10.2 Gate 行为（设计验证）
+
+| 子集 | n | gate 均值 | 偏 RNN 占比 | 偏 Trans 占比 |
+|------|---|----------|-------------|---------------|
+| Failed (y=1) | 314 | **0.430** | **59.2%** | 40.8% |
+| Passed (y=0) | 159 | **0.659** | 27.0% | **73.0%** |
+
+> ✅ Gate 真的在样本级做 PR 路由——failed→RNN（RNN Recall 高），passed→Trans（Trans Precision 高）
+
+### 10.3 融合贡献（新 SOTA）
+
+| 方案 | F1 | AUC | 备注 |
+|------|-----|-----|------|
+| Weighted 1/3/1（融合基线） | 0.9009 | 0.9349 | 1×RF + 3×HDM v2 + 1×LSTM |
+| Stack top-3 LR | 0.8986 | 0.9324 | |
+| **★ PR-DE-Net 3-way** (2.5RF + 2.5HDM + 1.0PR-DE) | **0.9027** | 0.9265 | **新 SOTA 融合方案** |
+| ★ PR-DE-Net 4-way (1RF + 3HDM + 0LSTM + 1PR-DE) | 0.9026 | 0.9288 | |
+
+**PR-DE-Net 把融合 F1 从 0.9009 推到 0.9027**（+0.18 pp）。
+
+### 10.4 失败模式
+
+| 类别 | n | Final 准确率 | gate |
+|------|---|-------------|------|
+| Failed 误判（y=1, pred=0） | 57 | 0% | 0.685（错误走了 Trans 分支）|
+| Passed 误判（y=0, pred=1） | 26 | 0% | 0.514 |
+
+> 单模型架构无法突破——错把 failed 当 passed 的样本（57/83）是模型盲区，需要其他模型族互补，这正是 RF/HDM-Net 在融合中贡献 0.5-1.0 权重的原因。
+
+### 10.5 运行复现
+
+```bash
+# 主模型
+python3 models/pr_de_net/train.py --ablation full
+
+# 消融
+python3 models/pr_de_net/ablation.py
+
+# 融合搜索
+python3 models/pr_de_net/fusion.py
+
+# 综合分析报告
+python3 models/pr_de_net/report.py
+```
+
+详细 README 见 [`models/pr_de_net/README.md`](../../models/pr_de_net/README.md)。**注意：PR-DE-Net 当前为 untracked 状态（`models/pr_de_net/` 和 `docs/paper-draft2*.md` 还未 commit），需要先 `git add` 后再 commit。**

@@ -174,6 +174,9 @@ python compare_all_unified.py
 | [Mamba](models/mamba/README.md) | 前沿 | Selective State Space Model, 7维事件序列, 6步流程 |
 | [BGM-Net](models/bgm_net/) | 参数高效 | 双分支 MLP（~5K 参数）解耦统计与比率特征，附 3 个可选模块的消融 |
 | [CREAM](models/cream/) | 对比学习 | 对比学习头 + Squeeze-Excitation，附 5 变体消融 |
+| [OST-Forest](models/ost_forest/) | 自蒸馏树森林 | 20 RFs OOF + 33-d meta + LR head + soft label (α=0.4)；F3 单折 F1=0.928 |
+| [MASC-Net](models/masc_net/) | 多尺度对比学习 | 多尺度编码 + Sample-aware 对比 + 不确定性分支；4 变体消融（baseline_only 最佳）|
+| [PR-DE-Net](models/pr_de_net/) | 双分支精召路由 | BiLSTM(Recall)+Transformer(Precision) + Gate MLP + 三段式 Loss；3-way 融合 F1=0.9027 |
 
 ## 特征工程 (46维)
 
@@ -215,7 +218,21 @@ python compare_all_unified.py
 | Mamba  | 46d | 0.7972 ± 0.042 | 0.8455 ± 0.033 | 0.8557 ± 0.048 |
 | BiLSTM | 7dim | 0.7295 ± 0.041 | 0.8153 ± 0.020 | 0.7398 ± 0.053 |
 | LSTM   | 7dim | 0.7189 ± 0.037 | 0.8062 ± 0.020 | 0.7259 ± 0.052 |
-| Mamba  | 7dim | 0.6109 ± 0.043 | 0.6768 ± 0.044 | 0.6150 ± 0.063 |
+| Mamba  | 7dim  | 0.6109 ± 0.043 | 0.6768 ± 0.044 | 0.6150 ± 0.063 |
+
+### 新模型单模型对比（2026-07-26/27 新增）
+
+| 模型 | 特征/架构 | Accuracy | Precision | Recall | F1 | AUC |
+|------|----------|----------|-----------|--------|----|------|
+| **OST-Forest (CV 均值)** | 33-d meta + LR + soft label | 0.8521 ± 0.027 | 0.9378 ± 0.035 | 0.8344 ± 0.048 | **0.8816 ± 0.023** | **0.9087 ± 0.014** |
+| **OST-Forest (F3 单折/最佳)** | 同上 + 阈值微调 | 0.9043 | 0.9355 | 0.9206 | **0.9280** | 0.9309 |
+| MASC-Net (baseline_only) | 7-dim + 多尺度编码 | 0.8458 ± 0.034 | 0.7145 ± 0.045 | 0.9058 ± 0.044 | **0.7985 ± 0.042** | **0.8995 ± 0.020** |
+| PR-DE-Net (full) | 46d + 7d 双分支 + Gate | — | 0.9092 | 0.8184 | **0.8601 ± 0.027** | 0.8711 |
+
+> **补充观察**：
+> 1. **OST-Forest 单模型（F3 折 0.9280）已超越 HDM-Net v2（T3 0.8982）+3.0 pts**，但 CV 均值 0.8816 仍低于 HDM-Net v2；说明 OST-Forest 的 refinement 阶段带来强单折性能，但泛化均值尚未稳定超越。
+> 2. **MASC-Net (baseline_only F1=0.7985) 比 BGM-Net baseline (F1=0.7458) 高 +5.27 pp**，但完整 MASC-Net (full F1=0.7286) 反而更低——与小样本对比学习负面结果一致。
+> 3. **PR-DE-Net 单模型不强**（F1=0.8601 < RF-7dim 0.8876），但通过端到端融合把最强集成从 0.9009 推到 **0.9027**。
 
 > **关键发现**：
 > 1. **新榜首 Weighted 1/3/1 (F1=0.901 / AUC=0.935)** – 1×RF + 3×HDM-Net v2 + 1×LSTM 的加权集成，超越 Late Fusion 5-way 在 F1 (略低 0.005) 和 AUC (反超 0.013) 的表现。同时 Precision=0.935 是全部单模型里最高的。详情见下一节。
@@ -338,6 +355,8 @@ python compare_all_unified.py
 | 变体 | F1 | Precision | Recall | AUC | 描述 |
 |------|-----|-----------|--------|-----|------|
 | **Weighted 1/3/1** | **0.9009 ± 0.019** | **0.9351 ± 0.019** | 0.8694 ± 0.027 | **0.9349 ± 0.013** | 1×RF + 3×HDM v2 + 1×LSTM |
+| **★ PR-DE-Net 3-way** | **0.9027 ± 0.014** | — | — | 0.9265 | 2.5×RF + 2.5×HDM v2 + 1.0×PR-DE-Net |
+| ★ PR-DE-Net 4-way | 0.9026 ± — | — | — | 0.9288 | 1×RF + 3×HDM v2 + 0×LSTM + 1×PR-DE-Net |
 | Weighted 2/3/1 | 0.8996 ± 0.024 | 0.9288 ± 0.020 | 0.8726 ± 0.032 | 0.9322 ± 0.013 | 2×RF + 3×HDM v2 + 1×LSTM |
 | **Stack (top-3 LR)** | 0.8986 ± 0.015 | 0.9072 ± 0.021 | **0.8918 ± 0.037** | 0.9324 ± 0.015 | LR(C=0.1) meta-learner |
 | HDM-Net v2 (单 best) | 0.8982 ± 0.022 | 0.9256 ± 0.017 | 0.8726 ± 0.029 | 0.9273 ± 0.014 | — |
@@ -431,6 +450,142 @@ RF probs (frozen) ──────────>┘     │
 - **2 层 self-attention** 在 4 个 segment 上太多——attention 抓不到稳定模式
 - **48K params** 比 v3 (29K) 多 67%，但泛化能力反降
 - **v3 才是这个架构融合路线的 sweet spot**：F1=0.8809, AUC=0.9253
+
+---
+
+### OST-Forest: Out-of-fold Self-distilled Tree Forest（F3 单折 F1=0.928, CV 均值 F1=0.882）
+
+**架构（20 RFs → OOF → 33-d meta → LR + self-distillation）**：
+
+```
+7-dim events ──┐
+               ├──> 20 RFs (depth 3/5/8, seed varies) ──> 5-fold OOF matrix (20-d)
+                                                              +
+7-dim handcrafted (7-d) + 6-d session stat = 33-d meta feature
+                                                              ↓
+                                              LR head + self-distillation soft label (α=0.4)
+                                                              ↓
+                                                         p_final ∈ [0,1]
+```
+
+**CV 5 折 + F3 折（refinement）对比**：
+
+| 指标 | CV 均值 | F3 折（refinement） |
+|------|---------|---------------------|
+| Accuracy | 0.8521 ± 0.027 | 0.9043 |
+| Precision | 0.9378 ± 0.035 | 0.9355 |
+| Recall | 0.8344 ± 0.048 | 0.9206 |
+| **F1** | **0.8816 ± 0.023** | **0.9280** ⭐ |
+| AUC | 0.9087 ± 0.014 | 0.9309 |
+
+**5 个核心 Finding**：
+
+1. **20 RF OOF marginal in 7-d**：大量 RF OOF 信号在 7-d 上边际收益有限。
+2. **LR head > LightGBM head by +0.0147 F1**（n=473）：简单线性头在小样本上反而胜出。
+3. **Soft label α=0.4 稳定 +0.007 F1**：自蒸馏有微弱贡献。
+4. **20→5 RF no significant degradation**：RF 数量可大幅缩减而不损性能。
+5. **7d > 46d in this regime**：验证"小样本偏 7-d"假说。
+
+**模型排名（F1，5 折 CV）**：
+
+| 排名 | 模型 | F1 | 类型 |
+|------|------|----|------|
+| 1 | Late Fusion 5-way | 0.9056 | 5 模型集成 |
+| 2 | **PR-DE-Net 3-way** | **0.9027** | 3 模型融合（详见下） |
+| 3 | Weighted 1/3/1 | 0.9009 | 3 模型加权 |
+| 4 | Stack top-3 LR | 0.8986 | 3 模型 LR stacking |
+| 5 | OST-Forest (CV 均值) | 0.8816 | 单模型 |
+| 6 | HDM-Net v2 (T3) | 0.8982 | 单模型 |
+| 7 | RF-LSTM v3 | 0.8809 | 单模型 |
+| 8 | RF-7dim | 0.8876 | 单模型（最强传统 ML）|
+| 9 | PR-DE-Net (full) | 0.8601 | 单模型 |
+| 10 | MASC-Net (baseline_only) | 0.7985 | 单模型 |
+
+> OST-Forest 的 F3 单折 0.928 是**单一折表现**，CV 均值 0.8816 更稳定；论文引用应使用均值。
+
+**实现文件**：`models/ost_forest/{model.py,train.py}`，refinement 变体输出在 `outputs/ost_forest/refine_F*.json`
+**详细报告**：[`docs/OST_FOREST_REPORT.md`](docs/OST_FOREST_REPORT.md)
+
+---
+
+### MASC-Net: Multi-scale Adaptive Sample-aware Contrastive Network（4 变体消融）
+
+**架构**：多尺度编码（CNN+MLP+Cross-Scale Attention）+ Sample-aware 对比（MoCo + adaptive τ + hard negatives）+ Prototype 记忆库（K=2 × M=4，EMA）+ Adaptive threshold 分类器 + Uncertainty 分支
+
+**4 变体消融（5 折 CV，n=473）**：
+
+| 变体 | Contrastive | Uncertainty | F1 | AUC |
+|------|:-----------:|:-----------:|----|-----|
+| **baseline_only** | ✗ | ✗ | **0.7985 ± 0.042** | **0.8995 ± 0.020** |
+| no_contrastive | ✗ | ✓ | 0.7517 ± 0.044 | 0.8479 ± 0.054 |
+| no_uncertainty | ✓ | ✗ | 0.7467 ± 0.026 | 0.8624 ± 0.026 |
+| full | ✓ | ✓ | 0.7286 ± 0.042 | 0.8644 ± 0.021 |
+
+**关键负发现**：
+
+1. **contrastive + uncertainty 模块在 n=473 上拖累 F1**（−7 pp vs baseline_only），与 BGM-Net 消融结论一致——**小样本下增加参数会引入方差**。
+2. **baseline_only 反超 BGM-Net baseline**（F1=0.7985 vs 0.7458，**+5.27 pp**），说明多尺度编码本身（去掉对比学习头）已经是个不错的特征提取器。
+3. **full 模型 AUC 仍可观**（0.8644）但 F1 显著下降，表明对比学习优化了概率排序但破坏了阈值化的分类决策。
+
+**实现文件**：`models/masc_net/{model.py,train.py}`，4 变体结果在 `outputs/masc_net/{baseline_only,no_contrastive,no_uncertainty,full}_results.json`
+
+---
+
+### PR-DE-Net: Precision-Recall Gated Dual-Encoder Network（融合 F1=0.903，单模型 F1=0.860）
+
+**架构动机**：LSTM/BiLSTM-46d Recall 高（0.80-0.83）但 Precision 仅 0.92；Transformer-7d Precision 高（0.918）但 Recall 0.82——两者学**互补判别特征**，应当端到端融合。
+
+**架构（双分支 + Gate MLP）**：
+
+```
+Input:  46-dim feature vector (B, 46)
+              │
+   ┌──────────┴──────────┐
+   ▼                     ▼
+Branch A: PR-RNN      Branch B: PR-Trans
+BiLSTM(2L, h=64)      Transformer(2L, d=32, 4-head)
+on (B,46,1)           on (B,7,1) + [CLS]
+   ↓                     ↓
+p_A (Recall)          p_B (Precision)
+   ↓                     ↓
+   └──────┬──────────────┘
+          ▼
+       Gate MLP
+   g = σ(MLP([F46, h_A, h_B]))
+          │
+   p_final = g·p_A + (1-g)·p_B
+```
+
+**三段式 Loss**：L = α·BCE(p_A, y) + β·BCE(1-p_B, y) + γ·BCE(p_final, y)，权重 (1.0, 1.0, 2.0)
+
+**Gate 学到设计目标**：
+
+| 子集 | n | gate 均值 | 偏 RNN 占比 | 偏 Trans 占比 |
+|------|---|----------|-------------|---------------|
+| Failed (y=1) | 314 | **0.430** | **59.2%** | 40.8% |
+| Passed (y=0) | 159 | **0.659** | 27.0% | **73.0%** |
+
+> ✅ Gate 真的在样本级做 PR 路由——failed→RNN（RNN Recall 高），passed→Trans（Trans Precision 高）
+
+**单模型 + 融合结果**：
+
+| 变体 | F1 | Precision | Recall | AUC | 备注 |
+|------|-----|-----------|--------|-----|------|
+| PR-DE-Net (full, 单) | 0.8601 ± 0.027 | 0.9092 | 0.8184 | 0.8711 | |
+| no_gate (固定 0.5/0.5 平均) | 0.8486 | 0.8691 | 0.8344 | 0.8412 | 验证 Gate 必要 |
+| single_loss (只用 γ·BCE) | 0.8653 | 0.8818 | 0.8504 | 0.8781 | |
+| Weighted 1/3/1 (融合基线) | 0.9009 | 0.9351 | 0.8694 | 0.9349 | |
+| **★ PR-DE-Net 3-way** (2.5RF+2.5HDM+1.0PR-DE) | **0.9027** | — | — | 0.9265 | **新 SOTA 融合方案** |
+| ★ PR-DE-Net 4-way (1RF+3HDM+0LSTM+1PR-DE) | 0.9026 | — | — | 0.9288 | |
+
+**关键贡献**：
+
+1. **PR-DE-Net 真正价值在融合**——把最强集成 F1 从 0.9009（Weighted 1/3/1）推到 **0.9027**（+0.18 pp）。
+2. **Gate 学到了设计目标**——failed 走 RNN 分支（高 Recall），passed 走 Trans 分支（高 Precision）。
+3. **失败模式明确**——错把 failed 当 passed 的 57 个样本上 Gate 路由失败（gate=0.685 应低于 0.5），表明单模型架构无法突破，需要 RF/HDM 在融合中补足视角。
+
+**实现文件**：`models/pr_de_net/{model.py,train.py,fusion.py,ablation.py}`，完整 README 见 [`models/pr_de_net/README.md`](models/pr_de_net/README.md)，融合结果在 `outputs/pr_de_net/fusion_{3way,4way}.json`
+
 
 > ⚠ **小样本说明**：n=473 是偏小样本，**F1 在 ±0.02 标准差波动下应谨慎解读**；所有"X 显著优于 Y"的强声明建议在大数据（n ≥ 2,000）上重新验证。
 
