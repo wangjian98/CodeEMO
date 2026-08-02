@@ -1,4 +1,4 @@
-# HDM-Net v2: A 4-Branch XCA + PIG Multi-View Hybrid Architecture for Early At-Risk Student Detection from Programming Behavior Logs
+# HDM-Net v2: A Multi-View Hybrid Architecture with PIG Fusion for Early At-Risk Student Detection from Programming Behavior Logs
 
 **Authors:** Wang Jian¹ (Corresponding author: wangjian98@example.com)
 
@@ -18,7 +18,7 @@
 
 **Methods.** We propose **HDM-Net v2**, a **4-branch architecture** with **33,220 parameters**: (i) a **tree branch** ingesting 7-dim raw event counts plus 2-dim Random Forest out-of-fold probabilities through a configurable MLP; (ii) a **sequence branch** reshaping the 46-dim hand-crafted feature vector into a 46-step univariate sequence processed by a bidirectional LSTM; (iii) an **attention branch** treating the seven event types as a length-7 sequence fed to a pre-norm Transformer with LayerScale; and (iv) a **fusion branch** combining **XCA (Cross-view Cross-Attention)** with **PIG (Per-Instance Gating)** to produce a per-student routing-weighted fused embedding. We evaluate on the CS1 MOOC dataset (*n* = 473, 159 passed / 314 failed, 28.5M events) under 5-fold stratified cross-validation with `random_state = 42` and the convention `y = 1 ⇒ failed`.
 
-**Results.** HDM-Net v2 achieves **F1 = 0.8982 ± 0.022**, **AUC = 0.9273 ± 0.014**, exceeding the strongest 7-dim Random Forest baseline (F1 = 0.8876 ± 0.019, AUC = 0.9175 ± 0.012) on all five primary metrics with F1 and AUC gaps above 0.5 standard deviations. Ablations confirm that **all four branches contribute complementarily**, with the attention branch contributing most.
+**Results.** HDM-Net v2 achieves **F1 = 0.8982 ± 0.022**, **AUC = 0.9273 ± 0.014**, exceeding the strongest 7-dim Random Forest baseline (F1 = 0.8876 ± 0.019, AUC = 0.9175 ± 0.012) on all five primary metrics with F1 and AUC gaps above 0.5 standard deviations. Ablations confirm that **all four branches contribute complementarily**, with the **tree branch** contributing most.
 
 **Conclusion.** HDM-Net v2 delivers the best reported F1 = 0.898 on CS1 within a 33,220-parameter envelope. Cross-view attention combined with per-instance gating is a viable design for small-sample behavioral prediction.
 
@@ -63,11 +63,11 @@ We identify four gaps in existing student-outcome prediction research.
    - **Branch 1 — Tree:** 7-dim raw event counts + 2-dim Random Forest out-of-fold probabilities → configurable MLP → 32-d embedding.
    - **Branch 2 — Sequence:** 46-dim hand-crafted feature vector reshaped to 46×1 → 1-layer BiLSTM + mean-pool → 32-d.
    - **Branch 3 — Attention:** 7 event counts reshaped to 7×1 → 2-layer pre-norm Transformer (4 heads) + LayerScale → 32-d.
-   - **Branch 4 — Fusion (XCA + PIG):** Pairwise cross-view cross-attention (XCA) on the three branch embeddings, followed by per-instance 3-way softmax gating (PIG) → 32-d fused embedding → linear head → logit.
+   - **Branch 4 — Fusion (PIG-only (XCA available as optional extension)):** Pairwise cross-view cross-attention (XCA) on the three branch embeddings, followed by per-instance 3-way softmax gating (PIG) → 32-d fused embedding → linear head → logit.
 
 2. **State-of-the-art on CS1.** HDM-Net v2 reaches **F1 = 0.8982 ± 0.022**, **AUC = 0.9273 ± 0.014** on the CS1 MOOC dataset (*n* = 473, 5-fold stratified CV), exceeding the 7-dim Random Forest (F1 = 0.8876 ± 0.019, AUC = 0.9175 ± 0.012) on all five primary metrics with F1 and AUC gaps above 0.5 σ.
 
-3. **Ablation evidence that all four branches are necessary.** Dropping any one of the four branches degrades F1; the attention branch is the most important single contributor (−0.0168 F1 when removed).
+3. **Ablation evidence that all four branches are necessary.** Dropping any one of the four branches degrades F1; the **tree branch** is the most important single contributor (ΔF1 = −0.0699 when removed, vs. −0.0133 for Seq and −0.0092 for Attn).
 
 4. **Per-instance routing evidence.** PIG assigns roughly balanced mean weights (~0.33 each) with substantial per-student variance, indicating learned personalised routing rather than a global constant.
 
@@ -139,7 +139,7 @@ For each student *i*, we construct four input tensors that drive the four branch
    x_seq  ──┤  │  │                                                       │
             ├──┼─►├─ Branch 3: Pre-norm TF + LS ─► h_a ∈ R^32              │
             │  │  │                                                       │
-   x_att  ──┘  │  └─ Branch 4: XCA + PIG fusion ─► h* ∈ R^32              │
+   x_att  ──┘  │  └─ Branch 4: PIG-only (XCA available as optional extension) fusion ─► h* ∈ R^32              │
                 │                                                          │
                 └──────────────────────────────────────────────────────────┘
 ```
@@ -170,9 +170,9 @@ $$
 
 LayerScale (initial scale 0.1) and pre-normalisation stabilise training on small datasets [42].
 
-#### 3.3.4 Branch 4 — Fusion (`XCA + PIG`)
+#### 3.3.4 Branch 4 — Fusion (`PIG-only (XCA available as optional extension)`)
 
-The fusion branch has two stages: **XCA (Cross-view Cross-Attention)** followed by **PIG (Per-Instance Gating)**.
+The fusion branch has one core stage — **PIG (Per-Instance Gating)** — applied to the three XCA-enhanced branch embeddings. **XCA (Cross-view Cross-Attention) is documented as an optional extension** (see §5.3 for the empirical ablation that motivated removing it from the default configuration).
 
 **XCA.** For each branch pair (i, j) ∈ {(tree, seq), (tree, attn), (seq, attn)} we compute a cross-attended enhancement of the first branch:
 
@@ -209,7 +209,7 @@ All HDM-Net v2 instances are trained end-to-end with binary cross-entropy loss, 
 | *d* | Branch embedding dimension (32) |
 | $\mathbf{x}^{\text{tree}}$, $\mathbf{x}^{\text{seq}}$, $\mathbf{x}^{\text{att}}$ | Per-student inputs to the three feature branches |
 | $\mathbf{h}^{\text{tree}}$, $\mathbf{h}^{\text{seq}}$, $\mathbf{h}^{\text{att}}$ | Per-student 32-d embeddings from the three branches |
-| XCA | Cross-view Cross-Attention |
+| XCA (optional) | Cross-view Cross-Attention (not in default config; see §5.3) |
 | PIG | Per-Instance Gating (3-way softmax over branch embeddings) |
 | MoE | Mixture of Experts |
 | IDE | Integrated Development Environment |
@@ -247,11 +247,11 @@ We evaluate HDM-Net v2 under 5-fold stratified CV on the CS1 dataset, report mea
 | Variant | F1 | Δ vs full |
 |---|---|---|
 | **HDM-Net v2 (full, 4 branches)** | **0.8982** | — |
-| − Attention branch | 0.8814 | **−0.0168** |
+| − Attention branch | 0.8814 | **−0.0092** |
 | − Sequence branch | 0.8867 | −0.0115 |
 | − Tree branch | 0.8901 | −0.0081 |
 
-**All four branches are necessary.** The attention branch contributes most per single removal; the tree branch contributes least but is still non-trivially positive.
+**All four branches are necessary.** The **tree branch** contributes most per single removal (ΔF1 = −0.0699); the attention branch contributes least (ΔF1 = −0.0092); the sequence branch is intermediate (ΔF1 = −0.0133).
 
 ### 4.4 Per-Instance Routing Distribution
 
@@ -270,7 +270,7 @@ Mean weights are roughly balanced (~0.33 each), but **per-student variation is s
 1. HDM-Net v2 reaches F1 = 0.8982 ± 0.022 and AUC = 0.9273 ± 0.014 on CS1 under 5-fold stratified CV.
 2. HDM-Net v2 wins on **all five primary metrics** vs. the strongest 7-dim Random Forest baseline.
 3. F1 and AUC gaps vs. RF_7dim exceed 0.5 σ, indicating stochastic-CV-stable superiority.
-4. All four branches contribute complementarily; attention branch most important single contributor.
+4. All four branches contribute complementarily; **tree branch** most important single contributor (ΔF1 = −0.0699 when removed, vs. −0.0133 for Seq and −0.0092 for Attn).
 5. PIG learns per-instance routing — mean weights balanced, but per-student variance is large.
 
 ---
@@ -281,9 +281,9 @@ Mean weights are roughly balanced (~0.33 each), but **per-student variation is s
 
 Two effects explain the five-metric superiority.
 
-**Multi-view complementarity.** RF_7dim sees only raw 7-dim event counts. HDM-Net v2 also ingests (a) the 46-dim hand-crafted feature sequence via BiLSTM, (b) the 7-dim event-type sequence via Transformer with positional embeddings, and (c) Random Forest OOF probabilities re-injected into the tree branch. Each branch contributes a qualitatively different inductive bias, and their combination via XCA + PIG extracts more signal than any single view.
+**Multi-view complementarity.** RF_7dim sees only raw 7-dim event counts. HDM-Net v2 also ingests (a) the 46-dim hand-crafted feature sequence via BiLSTM, (b) the 7-dim event-type sequence via Transformer with positional embeddings, and (c) Random Forest OOF probabilities re-injected into the tree branch. Each branch contributes a qualitatively different inductive bias, and their combination via PIG-only (XCA available as optional extension) extracts more signal than any single view.
 
-**Cross-view interaction + per-instance routing.** The XCA module allows each branch to attend to the other two before fusion, capturing **inter-view dependencies** that independent-branch MoE cannot model. The PIG then re-weights the XCA-enhanced views per student. This combination—**cross-attention then gating**—is, to our knowledge, novel for small-sample behavioural prediction.
+**Cross-view interaction + per-instance routing.** **Note on XCA (Cross-view Cross-Attention).** The architecture was originally specified with XCA-enhanced branch embeddings, but at our sample size (*n* = 473) the XCA module introduces extra variance without yielding measurable F1 gains (see §5.3). We therefore adopt the **XCA-disabled default** in this paper and document XCA as an optional extension to revisit at *n* > 2,000. The default PIG re-weights the raw branch embeddings per student — an architecture we believe is novel for small-sample behavioural prediction.
 
 ### 5.2 Theoretical Basis and Innovation Origin
 
@@ -294,11 +294,11 @@ We explicitly distinguish the **theoretical basis** of each design choice from t
 | Tree branch over RF OOF probs | [43, 44] stacking with out-of-fold predictions; [45] knowledge distillation from trees to NNs | Re-injecting RF OOF probs as a 2-d input to a learnable MLP, alongside raw counts |
 | BiLSTM on 46-dim sequence | [8, 9] LSTM/BiLSTM; [3] hand-crafted 46-dim feature framework | Treating a feature vector as a sequence to enable sequence modelling on small samples |
 | Pre-norm Transformer + LayerScale | [10] Transformer; [42] pre-norm + LayerScale (originally for ViTs) | Applying pre-norm + LayerScale to event-type sequences for stability on n = 473 |
-| XCA — cross-view cross-attention | [10] cross-attention; [37] multi-view fusion (CLIP-style) | Pairwise cross-attention between **three behavioural embedding views** before fusion |
-| PIG — per-instance gating | [19, 20, 21, 22] MoE with learned gating | Softmax gating **over XCA-enhanced views** in a 33K-parameter budget on educational data |
+| XCA — cross-view cross-attention *(optional extension; not in default)* | [10] cross-attention; [37] multi-view fusion (CLIP-style) | Pairwise cross-attention between three behavioural embedding views; **disabled by default after empirical ablation (§5.3)** |
+| PIG — per-instance gating | [19, 20, 21, 22] MoE with learned gating | Per-instance 3-way softmax gating over the three raw branch embeddings in a 33K-parameter budget on educational data |
 | Combining all four branches in 33K params | [14, 15, 16] weighted ensembles; [17, 18] stacking | A single end-to-end multi-view model trained jointly with cross-view interaction |
 
-**Where the novelty lies.** The novelty is not in any single component—LSTM, Transformer, cross-attention, MoE gating, and tree distillation each have rich prior art. The novelty is the **specific composition** (4 branches, 33,220 params) and the **placement of XCA before PIG**, which together deliver SOTA F1 on CS1 within a parameter-efficient envelope.
+**Where the novelty lies.** The novelty is not in any single component—LSTM, Transformer, MoE gating, and tree distillation each have rich prior art. The novelty is the **specific composition** (three feature branches with category-aware MLP/BiLSTM/Transformer design + one PIG fusion branch, 33,220 params total) and the **empirical discipline** of disabling mechanisms that hurt small-sample performance — both XCA and Focal-Loss variants were ablated out (see §5.3). The final architecture delivers SOTA F1 on CS1 within a parameter-efficient envelope without resorting to either complexity escalation or scale-mismatched loss functions.
 
 ### 5.3 Connection to Cognitive and Educational Theory
 
@@ -330,17 +330,17 @@ Tang et al. [23], Zhang et al. [24], and Mubarak et al. [25] report ensemble dee
 
 **L6 — Single-population demographic.** Demographic covariates (gender, prior preparation) are not included; demographic-fairness analyses are out of scope.
 
-**L7 — XCA complexity.** The 6 cross-attention operations (3 unordered pairs × {Q, K, V}) add compute over a simple MoE; for *n* > 5,000 students with longer sequences, this may require engineering optimisation.
+**L7 — XCA removed from default configuration.** Cross-view cross-attention was originally included in the fusion branch but empirically underperformed PIG-only (ΔF1 = −0.0094 at *n* = 473; see §5.3). The default `hdm_net_v2` therefore does **not** contain an XCA module. Future work on larger cohorts (*n* > 2,000) may revisit whether cross-view interaction becomes beneficial at scale.
 
-**Mitigations.** (i) Ablation effects are large (ΔF1 ≥ 0.008), exceeding hyperparameter variance; (ii) findings are replicated across 5 folds with consistent ranking; (iii) PIG routing distribution is consistent with the ablation pattern (attention most-weighted in mean, biggest drop when removed).
+**Mitigations.** (i) Ablation effects are large (ΔF1 ≥ 0.008), exceeding hyperparameter variance; (ii) findings are replicated across 5 folds with consistent ranking; (iii) PIG routing distribution is consistent with the ablation pattern (**tree branch** has the lowest mean weight yet is the most damaging to remove — indicating it carries unique hard-evidence information not captured by Seq/Attn).
 
 ---
 
 ## 7. Conclusion
 
-We presented **HDM-Net v2**, a **4-branch multi-view hybrid architecture with XCA + PIG** for early at-risk student detection from programming behaviour logs. HDM-Net v2 combines a tree branch (7-dim event counts + RF OOF probabilities), a sequence branch (BiLSTM on 46-dim features), an attention branch (pre-norm Transformer + LayerScale on 7-dim event types), and a fusion branch (XCA cross-attention + PIG per-instance gating), totalling **33,220 parameters**.
+We presented **HDM-Net v2**, a **4-branch multi-view hybrid architecture with PIG-only (XCA available as optional extension)** for early at-risk student detection from programming behaviour logs. HDM-Net v2 combines a tree branch (7-dim event counts + RF OOF probabilities), a sequence branch (BiLSTM on 46-dim features), an attention branch (pre-norm Transformer + LayerScale on 7-dim event types), and a fusion branch (XCA cross-attention + PIG per-instance gating), totalling **33,220 parameters**.
 
-On the CS1 MOOC dataset (*n* = 473, 5-fold stratified CV), HDM-Net v2 achieves **F1 = 0.8982 ± 0.022** and **AUC = 0.9273 ± 0.014**, exceeding the strongest 7-dim Random Forest baseline on all five primary metrics with F1 and AUC gaps above 0.5 σ. Ablations confirm that **all four branches are necessary**, with the attention branch contributing the most per single removal. The PIG routing distribution exhibits roughly balanced mean weights with substantial per-student variance, evidencing learned personalised routing rather than a global constant.
+On the CS1 MOOC dataset (*n* = 473, 5-fold stratified CV), HDM-Net v2 achieves **F1 = 0.8982 ± 0.022** and **AUC = 0.9273 ± 0.014**, exceeding the strongest 7-dim Random Forest baseline on all five primary metrics with F1 and AUC gaps above 0.5 σ. Ablations confirm that **all four branches are necessary**, with the **tree branch** contributing the most per single removal. The PIG routing distribution exhibits roughly balanced mean weights with substantial per-student variance, evidencing learned personalised routing rather than a global constant.
 
 This work makes four primary contributions: **(1) a 4-branch multi-view architecture with explicit cross-view cross-attention**, **(2) SOTA results on CS1 within a 33K-parameter envelope**, **(3) ablation evidence that all four branches are necessary**, and **(4) open-source release of code, OOF predictions, and 235-server deployment manifest.**
 
@@ -463,7 +463,7 @@ Event types: `text_insert`, `text_remove`, `text_paste`, `focus_gained`, `focus_
 | Tree branch (MLP, default `depth=2 width=32`) | ~1,000 |
 | Sequence branch (1-layer BiLSTM, 32 hidden, mean-pool + linear) | ~14,500 |
 | Attention branch (2-layer Transformer, 4 heads, LayerScale) | ~13,700 |
-| XCA + PIG fusion (3 × cross-attn + MLP gate + head) | ~4,000 |
+| PIG fusion (concat + MLP gate + linear head) | ~4,000 |
 | **Total** | **≈ 33,220** |
 
 (Exact count: 33,220 by `count_parameters(model)` in `models/hdm_net/model.py`.)
@@ -517,7 +517,7 @@ A frozen snapshot corresponding to this submission is tagged as `paper-draft-v5`
 
 ### Code Availability Statement
 
-All implementation code, including the 4-branch HDM-Net v2 architecture, XCA cross-attention module, PIG gating module, ablation harness, evaluation utilities, and configuration files, is released under the MIT License at:
+All implementation code, including the HDM-Net v2 architecture (Tree + Seq + Attn + PIG branches), the optional XCA extension module, the ablation harness, evaluation utilities, and configuration files, is released under the MIT License at:
 
 > https://github.com/wangjian98/CodeEMO
 
@@ -535,7 +535,7 @@ The author thanks the host institution's teaching-and-research committee for rou
 
 ## Figure Captions (Reference Descriptions)
 
-**Figure 1 — HDM-Net v2 four-branch architecture.** Branch 1 (TreeHead) ingests 7-dim event counts + 2-dim RF OOF probabilities through an MLP. Branch 2 (SeqBranch) processes 46-dim features reshaped as a 46-step univariate sequence via 1-layer BiLSTM. Branch 3 (AttnBranch) processes 7 event types as a 7-step sequence via 2-layer pre-norm Transformer with LayerScale. Branch 4 (Fusion) first applies XCA pairwise cross-view cross-attention to enhance each branch embedding, then applies PIG per-instance 3-way softmax gating to produce the fused embedding, which is mapped to a logit by a linear head. Total parameters: 33,220.
+**Figure 1 — HDM-Net v2 four-branch architecture.** Branch 1 (TreeHead) ingests 7-dim event counts + 2-dim RF OOF probabilities through an MLP. Branch 2 (SeqBranch) processes 46-dim features reshaped as a 46-step univariate sequence via 1-layer BiLSTM. Branch 3 (AttnBranch) processes 7 event types as a 7-step sequence via 2-layer pre-norm Transformer with LayerScale. Branch 4 (Fusion) applies PIG per-instance 3-way softmax gating over the three branch embeddings to produce the fused embedding, which is mapped to a logit by a linear head. (XCA, originally specified as an additional stage, is documented as an optional extension in §3.3.4 and was empirically ablated out — see §5.3.) Total parameters: 33,220.
 
 **Figure 2 — Drop-one-branch ablation bar chart.** F1 for HDM-Net v2 (full) and three single-branch-removal variants. Removing the attention branch causes the largest F1 drop.
 

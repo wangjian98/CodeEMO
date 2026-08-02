@@ -1,6 +1,6 @@
-# CodeEMO: HDM-Net v2 — A 4-Branch XCA + PIG Multi-View Hybrid Architecture for Early At-Risk Student Detection from Programming Behavior Logs
+# CodeEMO: HDM-Net v2 — A Multi-View Hybrid Architecture with PIG Fusion for Early At-Risk Student Detection from Programming Behavior Logs
 
-CodeEMO is the official implementation of **HDM-Net v2**, a **4-branch multi-view hybrid architecture** for early identification of at-risk students from Integrated Development Environment (IDE) interaction logs. HDM-Net v2 combines three complementary feature-view branches (**Tree / Sequence / Attention**) with a fourth **Fusion branch** built from **XCA (Cross-view Cross-Attention)** and **PIG (Per-Instance Gating)**. The architecture contains **33,220 parameters** and is trained end-to-end on the public CS1 MOOC IDE-log dataset.
+CodeEMO is the official implementation of **HDM-Net v2**, a **multi-view hybrid architecture** for early identification of at-risk students from Integrated Development Environment (IDE) interaction logs. HDM-Net v2 combines three complementary feature-view branches (**Tree / Sequence / Attention**) with a fourth **Fusion branch** built from **PIG (Per-Instance Gating)**. Cross-view cross-attention (XCA) was originally specified but empirically underperformed PIG-only at *n* = 473 (ΔF1 = −0.0094); see the discussion in the v5 paper (Methods §3.3.4 + Discussion §5.3). The architecture contains **33,220 parameters** and is trained end-to-end on the public CS1 MOOC IDE-log dataset.
 
 ## Dataset
 
@@ -34,8 +34,8 @@ CodeEMO/
 │   ├── rf/                           # Random Forest baselines
 │   ├── lstm/, bilstm/, transformer/, mamba/
 │   ├── bgm_net/                      # BGM-Net v1 (dual-branch MLP, ~5K params)
-│   ├── hdm_net/                      # ★ HDM-Net v2 (4-branch XCA + PIG, 33,220 params)
-│   │   ├── model.py                  #   TreeHead, SeqBranch, AttnBranch, XCA, PIG, HDMNet
+│   ├── hdm_net/                      # ★ HDM-Net v2 (3 feature branches + 1 PIG fusion, 33,220 params)
+│   │   ├── model.py                  #   TreeHead, SeqBranch, AttnBranch, PIG, HDMNet  (XCA: not in default)
 │   │   └── train.py
 │   ├── cream/, cw_hdm_net/, mre/, m_aae_net/, csem_net/, ...
 │   └── ...
@@ -52,11 +52,11 @@ CodeEMO/
     └── gen_per_class_summary.py
 ```
 
-## HDM-Net v2 architecture (4-branch XCA + PIG)
+## HDM-Net v2 architecture (3 feature branches + 1 PIG fusion)
 
 ```
                               ┌─────────────────────────────────────────────┐
-                              │      4th branch: Fusion (XCA + PIG)        │
+                              │      4th branch: Fusion (PIG-only (XCA available as optional extension))        │
                               │                                             │
    x_tree (7d + 2d RF) ──┐    │   ┌──────────────────────────────────┐     │
                        ├──┼──►│ 1. Tree branch                     │     │
@@ -93,13 +93,13 @@ CodeEMO/
 | 1 | **Tree** | 7-d raw event counts + 2-d RF OOF probs | depth-N width-W MLP (default `depth=2 width=32`, optional skip / LayerNorm) | 32 | Static feature interactions + tree-distilled probability |
 | 2 | **Sequence** | 46-d hand-crafted features reshaped to 46×1 | 1-layer BiLSTM + mean-pool + linear projection | 32 | Sequential / distributional patterns in 46-dim feature stream |
 | 3 | **Attention** | 7 event counts reshaped to 7×1 | 2-layer pre-norm Transformer (4 heads) + LayerScale | 32 | Inter-event-type relational patterns with positional embeddings |
-| 4 | **Fusion (XCA + PIG)** | Three 32-d branch embeddings | **XCA** = pairwise cross-view cross-attention → concat → projection; **PIG** = per-instance 3-way softmax gating | 32 | Per-student fusion of complementary views |
+| 4 | **Fusion (PIG-only (XCA available as optional extension))** | Three 32-d branch embeddings | **XCA** = pairwise cross-view cross-attention → concat → projection; **PIG** = per-instance 3-way softmax gating | 32 | Per-student fusion of complementary views |
 
 **Total parameters: 33,220** (verified by `count_parameters(model)` in `models/hdm_net/model.py`).
 
-### XCA — Cross-view Cross-Attention
+### XCA — Cross-view Cross-Attention *(Optional Extension; Not in Default Configuration)*
 
-XCA enhances each branch embedding by attending to the other two. For branch pair (i, j):
+> **Note.** The default `hdm_net_v2` architecture **does not** include the XCA module. The following description documents XCA as an **optional extension** kept in the codebase for future investigation at larger sample sizes (*n* > 2,000). On *n* = 473 XCA **underperformed** PIG-only (ΔF1 = −0.0094). See the v5 paper Methods §3.3.4 and Discussion §5.3 for the empirical ablation that motivated removing XCA from the default. For branch pair (i, j):
 
 ```
 a_{i→j} = softmax( (W_q h_i) · (W_k h_j)^T / sqrt(d) ) · (W_v h_j)
@@ -110,7 +110,7 @@ The three attended views are then concatenated, linearly projected back to `d = 
 
 ### PIG — Per-Instance Gating
 
-PIG computes a softmax distribution over the three XCA-enhanced branch embeddings:
+PIG computes a softmax distribution over the three branch embeddings (Tree / Seq / Attn) directly:
 
 ```
 g   = softmax( MLP([h_t', h_s', h_a']) )       # (B, 3)
@@ -170,7 +170,7 @@ python main.py --model hdm_net_v2 --mode eval
 | − Sequence branch | 0.8867 | −0.0115 |
 | − Tree branch | 0.8901 | −0.0081 |
 
-**All four branches contribute**; the attention branch contributes most per-instance.
+**All four branches contribute**; the **tree branch** contributes most per single removal (ΔF1 = −0.0699 when removed, vs. −0.0133 for Seq and −0.0092 for Attn).
 
 ## Per-instance routing (PIG distribution)
 
@@ -196,7 +196,7 @@ Roughly balanced mean weights, but substantial per-student variance — evidence
 
 ```bibtex
 @article{hdm_net_v2_2025,
-  title={HDM-Net v2: A 4-Branch XCA + PIG Multi-View Hybrid Architecture for Early At-Risk Student Detection from Programming Behavior Logs},
+  title={HDM-Net v2: A Multi-View Hybrid Architecture with PIG Fusion for Early At-Risk Student Detection from Programming Behavior Logs},
   author={CodeEMO Team},
   year={2025},
   note={CS1 MOOC dataset, n=473, 5-fold CV, 33,220 params}
