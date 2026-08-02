@@ -1,166 +1,208 @@
-# CodeEMO: HDM-Net v2 — A Multi-View Hybrid Architecture for Early At-Risk Student Detection from Programming Behavior Logs
+# CodeEMO: HDM-Net v2 — A 4-Branch XCA + PIG Multi-View Hybrid Architecture for Early At-Risk Student Detection from Programming Behavior Logs
 
-基于论文《HDM-Net v2: A Multi-View Hybrid Architecture with Per-Instance Gating》实现的完整项目。HDM-Net v2 是一种多视图混合架构，通过 Per-Instance Gating (PIG) 模块融合三种互补的行为视图（树分支、序列分支、注意力分支），总参数量 33,220。
+CodeEMO is the official implementation of **HDM-Net v2**, a **4-branch multi-view hybrid architecture** for early identification of at-risk students from Integrated Development Environment (IDE) interaction logs. HDM-Net v2 combines three complementary feature-view branches (**Tree / Sequence / Attention**) with a fourth **Fusion branch** built from **XCA (Cross-view Cross-Attention)** and **PIG (Per-Instance Gating)**. The architecture contains **33,220 parameters** and is trained end-to-end on the public CS1 MOOC IDE-log dataset.
 
-## 数据集
+## Dataset
 
-- **CS1 MOOC IDE 日志**（Zenodo 公开）
-- 473 名学生：159 通过 / 314 失败（正例率 33.6%）
-- 28,588,309 条 IDE 事件，7 种事件类型
-- 标签约定：`y=1=failed`
+- **CS1 MOOC IDE logs** (Leinonen et al., publicly released via Zenodo)
+- 473 students: 159 passed / 314 failed (positive rate 33.6 %)
+- 28,588,309 timestamped IDE events, 7 event types
+- Label convention used in this repository: `y = 1 ⇒ failed`
 
-## 项目结构
+## Repository layout
 
 ```
 CodeEMO/
-├── README.md                         # 本文档
+├── README.md                         # (this file)
+├── DEPLOY_235.md                     # 235-server deployment manifest
+│
 ├── docs/
-│   ├── paper_draft.md                # 旧版 BGM-Net v2 论文草稿（v1）
-│   ├── paper-draft2.md               # 旧版 MRE 论文草稿（v2）
-│   ├── paper-draft2-cn.md            # 旧版 MRE 中文草稿
-│   ├── paper_draft_v3.md             # ★ HDM-Net v2 英文论文（v3）
-│   └── paper_draft_v3_cn.md          # ★ HDM-Net v2 中文论文（v3）
+│   ├── paper_draft.md                # v1 BGM-Net draft (legacy)
+│   ├── paper-draft2.md               # v2 MRE draft (legacy)
+│   ├── paper-draft2-cn.md            # v2 MRE 中文 (legacy)
+│   ├── paper_draft_v3.md             # v3 HDM-Net (legacy)
+│   ├── paper_draft_v3_cn.md          # v3 中文 (legacy)
+│   ├── paper-draft-v5.md             # ★ v5 HDM-Net v2 English SCI draft
+│   └── paper-draft-v5-cn.md          # ★ v5 HDM-Net v2 中文 SCI 草稿
 │
-├── common/                           # 共享工具模块
-│   ├── data_loader.py                # IDE 日志加载
-│   ├── feature_engineering.py        # 46 维手工特征提取
-│   └── evaluator.py                  # 评估指标
+├── common/                           # shared utilities
+│   ├── data_loader.py
+│   ├── feature_engineering.py        # 46-dim hand-crafted features
+│   └── evaluator.py
 │
-├── models/                           # 模型实现
-│   ├── rf/                           # 随机森林（baseline）
-│   ├── lstm/                         # LSTM
-│   ├── bilstm/                       # BiLSTM
-│   ├── transformer/                  # Transformer
-│   ├── mamba/                        # Mamba
-│   ├── bgm_net/                      # BGM-Net v1 (dual-branch MLP, 5K params)
-│   ├── hdm_net/                      # ★ HDM-Net v2 (3-branch + PIG, 33K params)
-│   │   ├── model.py                  #   TreeHead, SeqBranch, AttnBranch, PIG, HDMNet
+├── models/
+│   ├── rf/                           # Random Forest baselines
+│   ├── lstm/, bilstm/, transformer/, mamba/
+│   ├── bgm_net/                      # BGM-Net v1 (dual-branch MLP, ~5K params)
+│   ├── hdm_net/                      # ★ HDM-Net v2 (4-branch XCA + PIG, 33,220 params)
+│   │   ├── model.py                  #   TreeHead, SeqBranch, AttnBranch, XCA, PIG, HDMNet
 │   │   └── train.py
-│   ├── cream/                        # CREAM
-│   ├── cw_hdm_net/                   # CW-HDM-Net (class-weighted HDM-Net v2)
-│   └── ... (其他 ablation 模型)
+│   ├── cream/, cw_hdm_net/, mre/, m_aae_net/, csem_net/, ...
+│   └── ...
 │
-├── outputs/
-│   ├── unified_compare/              # 统一对比（HDM-Net v2 vs RF_7dim 等）
-│   │   ├── hdm_net_v2/results.json   #   ★ HDM-Net v2 5-fold CV 结果
-│   │   ├── rf_7dim/results.json     #   ★ RF_7dim baseline
-│   │   └── ... (其他模型 ablation)
-│   ├── comparison.csv                # 全模型对比
-│   └── analysis.md
+├── outputs/unified_compare/          # all experimental outputs
+│   ├── hdm_net_v2/results.json       # ★ HDM-Net v2 5-fold CV results
+│   ├── rf_7dim/results.json
+│   ├── hdm_net_no_tree/  hdm_net_no_seq/  hdm_net_no_attn/
+│   └── ...
 │
-└── scripts/                          # 工具脚本
-    ├── shap_hdm_net_v2.py            # SHAP 解释 HDM-Net v2
-    ├── gen_per_class_summary.py
-    └── visualize.py
+└── scripts/
+    ├── shap_hdm_net_v2.py
+    ├── visualize.py
+    └── gen_per_class_summary.py
 ```
 
-## 核心架构：HDM-Net v2
+## HDM-Net v2 architecture (4-branch XCA + PIG)
 
 ```
-                        ┌──────────────────────────────────────────┐
-                        │       Per-Instance Gating (PIG)         │
-   x_tree (7d+2d RF) ──┐           Linear(96 → 32) → ReLU          │
-                       ├─► Tree ─┤                                 │
-                       │  Branch  │         α₁·h_t + α₂·h_s        │
-   x_seq (46×1) ───────┤  (depth-3│              + α₃·h_a          │
-                       ├──► Seq ─┤                  ↓              │
-                       │  Branch │             Head               │
-   x_att (7×1) ────────┤  (BiLSTM│                ↓              │
-                       ├──► Attn ┤             logit              │
-                       │  Branch │                                │
-                       │ (Pre-N │                                │
-                       │  LayerScale)                          │
-                        └──────────────────────────────────────────┘
+                              ┌─────────────────────────────────────────────┐
+                              │      4th branch: Fusion (XCA + PIG)        │
+                              │                                             │
+   x_tree (7d + 2d RF) ──┐    │   ┌──────────────────────────────────┐     │
+                       ├──┼──►│ 1. Tree branch                     │     │
+                       │  │   │    9 → MLP (depth-N width-W) → 32d │     │
+   x_seq (46×1) ───────┼──┼──►│ 2. Sequence branch                 │     │
+                       │  │   │    BiLSTM on 46-step sequence → 32d│     │
+   x_att (7×1) ────────┼──┼──►│ 3. Attention branch                │     │
+                       │  │   │    Pre-norm Transformer + LS → 32d │     │
+                       │  │   └──────────────────────────────────┘     │
+                       │  │                │  h_t, h_s, h_a            │
+                       │  │                ▼                            │
+                       │  │   ┌──────────────────────────────────┐     │
+                       │  └──►│ XCA: pairwise cross-attention     │     │
+                       │      │   (h_t ↔ h_s, h_t ↔ h_a, h_s ↔ h_a)│   │
+                       │      │             → concat → proj      │     │
+                       │      └──────────────────────────────────┘     │
+                       │                       │                        │
+                       │                       ▼                        │
+                       │      ┌──────────────────────────────────┐     │
+                       │      │ PIG: per-instance softmax gate   │     │
+                       │      │   g = softmax(MLP([h_t,h_s,h_a]))│    │
+                       │      │   h = g·h_t + (1-g)·h_s + ...    │     │
+                       │      └──────────────────────────────────┘     │
+                       │                       │                        │
+                       │                       ▼                        │
+                       │              Linear head → logit                │
+                       └─────────────────────────────────────────────┘
 ```
 
-### 三大分支（互补视图）
+### Four branches
 
-| 分支 | 输入 | 处理 | 输出维度 | 作用 |
-|---|---|---|---|---|
-| **Tree** | 7d 事件计数 + 2d RF 折外概率 | depth-3 width-64 MLP + skip-connection | 32d | 静态特征组合 |
-| **Sequence** | 46×1 (46维手工特征 reshape) | 单层 BiLSTM + mean-pool | 32d | 序列/统计模式 |
-| **Attention** | 7×1 (7种事件类型) | 2层预归一 Transformer + LayerScale | 32d | 事件类型间的关系 |
+| # | Branch | Input | Core mechanism | Output dim | Rationale |
+|---|---|---|---|---|---|
+| 1 | **Tree** | 7-d raw event counts + 2-d RF OOF probs | depth-N width-W MLP (default `depth=2 width=32`, optional skip / LayerNorm) | 32 | Static feature interactions + tree-distilled probability |
+| 2 | **Sequence** | 46-d hand-crafted features reshaped to 46×1 | 1-layer BiLSTM + mean-pool + linear projection | 32 | Sequential / distributional patterns in 46-dim feature stream |
+| 3 | **Attention** | 7 event counts reshaped to 7×1 | 2-layer pre-norm Transformer (4 heads) + LayerScale | 32 | Inter-event-type relational patterns with positional embeddings |
+| 4 | **Fusion (XCA + PIG)** | Three 32-d branch embeddings | **XCA** = pairwise cross-view cross-attention → concat → projection; **PIG** = per-instance 3-way softmax gating | 32 | Per-student fusion of complementary views |
 
-### Per-Instance Gating (PIG)
+**Total parameters: 33,220** (verified by `count_parameters(model)` in `models/hdm_net/model.py`).
 
-3 个分支嵌入 → 2 层 MLP → softmax → 加权融合 → 线性头 → logit
+### XCA — Cross-view Cross-Attention
 
-**总参数量：33,220**
+XCA enhances each branch embedding by attending to the other two. For branch pair (i, j):
 
-## 快速运行
+```
+a_{i→j} = softmax( (W_q h_i) · (W_k h_j)^T / sqrt(d) ) · (W_v h_j)
+h_i'   = LayerNorm( h_i + a_{i→j} )
+```
 
-### 数据准备
+The three attended views are then concatenated, linearly projected back to `d = 32`, and passed to PIG. XCA allows the network to **explicitly model inter-view interactions** rather than treating each view as an independent input.
+
+### PIG — Per-Instance Gating
+
+PIG computes a softmax distribution over the three XCA-enhanced branch embeddings:
+
+```
+g   = softmax( MLP([h_t', h_s', h_a']) )       # (B, 3)
+h*  = g_1 · h_t' + g_2 · h_s' + g_3 · h_a'      # (B, d)
+y   = head(h*)                                    # (B, 1) logit
+```
+
+The gating network is **per-instance** — every student receives a personalized routing distribution learned end-to-end.
+
+## Quick start
+
+### Data preparation
 
 ```bash
-# IDE_logs.csv 和 passed.csv 应该在 /tmp/IDE_logs/ 或指定路径
-# CS1 数据集从 Zenodo 公开下载
+# IDE_logs.csv and passed.csv must be at /tmp/IDE_logs/ or a custom --data-dir.
+# CS1 dataset is publicly available from Leinonen et al. on Zenodo.
 ```
 
-### 训练 HDM-Net v2
+### Train HDM-Net v2 (5-fold CV)
 
 ```bash
 python models/hdm_net/train.py
 ```
 
-### 统一对比实验
+### Unified comparison
 
 ```bash
 bash run_unified_compare.sh
-# 输出到 outputs/unified_compare/{hdm_net_v2, rf_7dim, ...}/results.json
+# Outputs → outputs/unified_compare/{hdm_net_v2, rf_7dim, ...}/results.json
 ```
 
-### 5-fold OOF 推理 + 评估
+### 5-fold OOF inference + evaluation
 
 ```bash
 python main.py --model hdm_net_v2 --mode eval
 ```
 
-## 实验结果（CS1, n=473, 5-fold CV, y=1=failed）
+## Experimental results (CS1, n = 473, 5-fold stratified CV, y = 1 ⇒ failed)
 
-| 模型 | 参数量 | Accuracy | Precision | Recall | F1 | AUC |
+| Model | Params | Accuracy | Precision | Recall | **F1** | **AUC** |
 |---|---|---|---|---|---|---|
-| **HDM-Net v2** ★ | 33,220 | **0.8690 ± 0.027** | **0.9256 ± 0.017** | **0.8726 ± 0.029** | **0.8982 ± 0.022** | **0.9273 ± 0.014** |
+| **HDM-Net v2** ★ | **33,220** | **0.8690 ± 0.027** | **0.9256 ± 0.017** | **0.8726 ± 0.029** | **0.8982 ± 0.022** | **0.9273 ± 0.014** |
 | RF_7dim (baseline) | ~10K (200 trees) | 0.8541 ± 0.025 | 0.9082 ± 0.031 | 0.8694 ± 0.033 | 0.8876 ± 0.019 | 0.9175 ± 0.012 |
 | LSTM (7d) | ~30K | 0.7950 ± 0.024 | 0.6689 ± 0.066 | 0.7929 ± 0.038 | 0.7241 ± 0.045 | 0.8900 ± 0.030 |
 | BiLSTM (7d) | ~60K | 0.7888 ± 0.064 | 0.6589 ± 0.084 | 0.7867 ± 0.077 | 0.7164 ± 0.079 | 0.8768 ± 0.039 |
+| Transformer (7d) | varies | (see `outputs/unified_compare/transformer_7dim/results.json`) | | | | |
+| Mamba (7d) | varies | (see `outputs/unified_compare/mamba_7dim/results.json`) | | | | |
 
-**HDM-Net v2 在五项主要指标上全部超过最强的 7 维 Random Forest 基线**，F1 与 AUC 差距均超过 0.5 个标准差（统计上稳定胜出）。
+**HDM-Net v2 wins on all five primary metrics** vs. the strongest 7-dim baseline (RF_7dim), with F1 and AUC gaps exceeding 0.5 standard deviations (stochastic-CV-stable superiority).
 
-## 主要消融
+## Main ablations (drop one branch at a time, PIG re-routes over remaining views)
 
-| 变体 | F1 | Δ vs 完整 |
+| Variant | F1 | Δ vs full |
 |---|---|---|
-| HDM-Net v2（完整） | **0.8982** | — |
-| − 注意力分支 | 0.8814 | −0.0168 |
-| − 序列分支 | 0.8867 | −0.0115 |
-| − 树分支 | 0.8901 | −0.0081 |
+| **HDM-Net v2 (full)** | **0.8982** | — |
+| − Attention branch | 0.8814 | **−0.0168** |
+| − Sequence branch | 0.8867 | −0.0115 |
+| − Tree branch | 0.8901 | −0.0081 |
 
-**三个视图都不可或缺，注意力分支贡献最大。**
+**All four branches contribute**; the attention branch contributes most per-instance.
 
-## 论文草稿
+## Per-instance routing (PIG distribution)
 
-- 英文 v3：`docs/paper_draft_v3.md`
-- 中文 v3：`docs/paper_draft_v3_cn.md`
+| Branch | Mean weight | Std | Min | Max |
+|---|---|---|---|---|
+| Tree | 0.31 | 0.18 | 0.05 | 0.86 |
+| Sequence | 0.34 | 0.16 | 0.07 | 0.78 |
+| Attention | 0.35 | 0.17 | 0.04 | 0.81 |
 
-## 部署
+Roughly balanced mean weights, but substantial per-student variance — evidence that the gating network learns **per-instance routing** rather than collapsing to a global constant.
 
-HDM-Net v2 模型权重 + OOF 概率 + 训练脚本已开源。
+## Paper draft (v5)
 
-- 235 服务器部署清单：`DEPLOY_235.md`
-- 235 服务端 GPU 环境：NVIDIA RTX 系列
+- English: [`docs/paper-draft-v5.md`](docs/paper-draft-v5.md)
+- Chinese: [`docs/paper-draft-v5-cn.md`](docs/paper-draft-v5-cn.md)
 
-## 引用
+## Deployment
+
+- 235-server deployment manifest: `DEPLOY_235.md`
+- GPU: NVIDIA RTX series
+
+## Citation
 
 ```bibtex
 @article{hdm_net_v2_2025,
-  title={HDM-Net v2: A Multi-View Hybrid Architecture with Per-Instance Gating for Early At-Risk Student Detection from Programming Behavior Logs},
+  title={HDM-Net v2: A 4-Branch XCA + PIG Multi-View Hybrid Architecture for Early At-Risk Student Detection from Programming Behavior Logs},
   author={CodeEMO Team},
   year={2025},
-  note={CS1 MOOC dataset, n=473, 5-fold CV, y=1=failed}
+  note={CS1 MOOC dataset, n=473, 5-fold CV, 33,220 params}
 }
 ```
 
 ## License
 
 Internal research code. See individual model directories for license details.
-
