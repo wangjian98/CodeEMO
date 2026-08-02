@@ -279,7 +279,7 @@ def main(output_dir=None, folds=5, epochs=80, batch_size=32, patience=10, seed=4
             'tree_branch': '7-dim events + 2-dim RF probs -> MLP -> 32-d',
             'seq_branch':  'BiLSTM on 4×11 segments -> 32-d',
             'attn_branch': 'Transformer on 7×1 segments -> 32-d',
-            'fusion': 'XCA (cross-view cross-attn) + PIG (per-instance gating)',
+            'fusion': 'PIG (XCA optional extension, see README/paper §5.3)',
         },
         'cv_results': {k: cv[k] for k in cv if k != 'n_folds_used'},
         'fold_details': fold_metrics,

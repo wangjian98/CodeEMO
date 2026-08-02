@@ -36,7 +36,7 @@ CodeEMO/
 │   ├── bgm_net/                      # BGM-Net v1 (dual-branch MLP, ~5K params)
 │   ├── hdm_net/                      # ★ HDM-Net v2 (3 feature branches + 1 PIG fusion, 33,220 params)
 │   │   ├── model.py                  #   TreeHead, SeqBranch, AttnBranch, PIG, HDMNet  (XCA: not in default)
-│   │   └── train.py
+│   │   ├── train.py                  #   standalone entry; results.json fusion field is "PIG (XCA optional, see §XCA below)"
 │   ├── cream/, cw_hdm_net/, mre/, m_aae_net/, csem_net/, ...
 │   └── ...
 │
